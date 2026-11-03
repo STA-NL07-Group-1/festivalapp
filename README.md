@@ -52,10 +52,10 @@ festivalapp/
 | --- | --- | --- |
 | Bob | Network & Cloud | Backend, hosting, realtime, chat, pushmeldingen |
 | Moses | Network & Cloud | Foto's, beheerportal, timetable-data, schaalbaarheid |
-| Gijs | Cyber Security | Accounts, vrienden via QR, privacy, noodbericht, SOS, repo-beveiliging |
-| Niek | Software | PWA-basis, timetable, Spotify, instellingen, beoordelingen |
-| Christian | IoT | Live map, drukte, aanmelden voor show, kompasmodus |
-| Dean | Open Learning | AI-chatbot, spraak, liedje herkennen, Wrapped, UX-tests |
+| _naam_ | Cyber Security | Accounts, vrienden via QR, privacy, noodbericht, SOS, repo-beveiliging |
+| _naam_ | Software | PWA-basis, timetable, Spotify, instellingen, beoordelingen |
+| _naam_ | IoT | Live map, drukte, aanmelden voor show, kompasmodus |
+| _naam_ | Open Learning | AI-chatbot, spraak, liedje herkennen, Wrapped, UX-tests |
 
 ## Aan de slag
 
