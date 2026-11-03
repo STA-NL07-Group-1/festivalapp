@@ -1,0 +1,54 @@
+name: Feature of taak
+description: Een nieuwe functie of een taak uit de planning
+title: "[Feature] "
+body:
+  - type: textarea
+    id: wat
+    attributes:
+      label: Wat moet er gebouwd worden?
+      description: Beschrijf de feature of taak in een paar zinnen.
+    validations:
+      required: true
+  - type: textarea
+    id: waarom
+    attributes:
+      label: Waarom?
+      description: Wat heeft de gebruiker of het team eraan?
+      placeholder: Als festivalbezoeker wil ik ..., zodat ...
+  - type: dropdown
+    id: vakgebied
+    attributes:
+      label: Vakgebied
+      options:
+        - Network & Cloud
+        - Cyber Security
+        - Software
+        - IoT
+        - Open Learning
+    validations:
+      required: true
+  - type: dropdown
+    id: prioriteit
+    attributes:
+      label: Hoort bij
+      options:
+        - MVP
+        - Uitbreiding
+    validations:
+      required: true
+  - type: textarea
+    id: klaar
+    attributes:
+      label: Wanneer is het klaar?
+      description: Waar moet het aan voldoen om het issue te mogen sluiten?
+      placeholder: |
+        - [ ] Werkt op iPhone en Android
+        - [ ] ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Security
+      options:
+        - label: Deze feature verwerkt persoonsgegevens (locatie, foto's, berichten, accountgegevens)

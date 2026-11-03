@@ -1,12 +1,18 @@
+# Wie moet reviewen bij welke bestanden.
+# De laatste regel die past, wint. Zet algemene regels dus bovenaan.
+
 # Standaard: iemand van het team reviewt
-*                  @STA-NL07-Group-1/developers
+*                    @STA-NL07-Group-1/developers
 
 # Gevoelige onderdelen: Cyber Security reviewt mee
-/backend/auth/     @SergeantAchron
-/.github/          @SergeantAchron
-/infra/            @SergeantAchron @atlantezzz
+/backend/auth/       @SergeantAchron
+/infra/              @SergeantAchron @atlantezzz
+/.github/            @SergeantAchron
+/SECURITY.md         @SergeantAchron
+/.env.example        @SergeantAchron
 
-# Per onderdeel
+# Per onderdeel: haal het # weg en vul de GitHub-naam in.
+# Let op: een onbekende of foute gebruikersnaam maakt CODEOWNERS ongeldig.
 /app/              @GitHubNiek0
 /backend/          @atlantezzz
 /portal/           @8moses
