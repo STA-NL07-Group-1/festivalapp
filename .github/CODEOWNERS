@@ -1,0 +1,12 @@
+# Standaard: iemand van het team reviewt
+*                  @STA-NL07-Group-1/developers
+
+# Gevoelige onderdelen: Cyber Security reviewt mee
+/backend/auth/     @SergeantAchron
+/.github/          @SergeantAchron
+/infra/            @SergeantAchron @atlantezzz
+
+# Per onderdeel
+/app/              @GitHubNiek0
+/backend/          @atlantezzz
+/portal/           @8moses

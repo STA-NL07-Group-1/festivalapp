@@ -147,3 +147,25 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Sleutels en certificaten (nooit in de repo)
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+# Firebase/Google service-account-bestanden (voor pushmeldingen)
+*-firebase-adminsdk-*.json
+serviceAccountKey.json
+
+# Build-output
+build/
+
+# Besturingssysteem
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
