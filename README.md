@@ -118,6 +118,7 @@ Alle taken staan als issues op het [projectbord](https://github.com/orgs/STA-NL0
 - De security-checks moeten groen zijn voordat je kunt mergen.
 - Opmerkingen uit een review moeten opgelost zijn voordat je kunt mergen.
 - Nieuwe taak of bug gevonden? Maak een issue aan met de templates **Feature of taak** of **Bug melden**.
+- Nieuwe functionaliteit krijgt tests in de automatische testsuite.
 
 ## Security
 
