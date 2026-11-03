@@ -2,6 +2,7 @@
 
 [![Security](https://github.com/STA-NL07-Group-1/festivalapp/actions/workflows/security.yml/badge.svg)](https://github.com/STA-NL07-Group-1/festivalapp/actions/workflows/security.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/STA-NL07-Group-1/festivalapp/badge)](https://scorecard.dev/viewer/?uri=github.com/STA-NL07-Group-1/festivalapp)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16295/badge)](https://www.bestpractices.dev/projects/16295)
 
 Een Progressive Web App (PWA) voor festivalbezoekers: vind je vrienden op het terrein, stel je eigen timetable samen en blijf op de hoogte van updates en drukte. Gemaakt door STA-NL07 Groep 1.
 
