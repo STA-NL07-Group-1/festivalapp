@@ -1,6 +1,5 @@
-# Security
+   # Security
 
-Heb je een kwetsbaarheid gevonden? Maak geen openbaar issue aan.
-Meld het via de Security-tab ("Report a vulnerability") of
-stuur een bericht aan [naam], Cyber Security in het team.
-We reageren binnen 3 werkdagen.
+   Heb je een kwetsbaarheid gevonden? Maak geen issue aan,
+   maar meld het direct bij [jouw naam] (Cyber Security) via Teams.
+   We reageren binnen 3 werkdagen.
