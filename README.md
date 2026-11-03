@@ -48,10 +48,10 @@ festivalapp/
 | --- | --- | --- |
 | Bob | Network & Cloud | Backend, hosting, realtime, chat, pushmeldingen |
 | Moses | Network & Cloud | Foto's, beheerportal, timetable-data, schaalbaarheid |
-| Gijs | Cyber Security | Accounts, vrienden via QR, privacy, noodbericht, SOS, repo-beveiliging |
-| Niek | Software | PWA-basis, timetable, Spotify, instellingen, beoordelingen |
-| Christian | IoT | Live map, drukte, aanmelden voor show, kompasmodus |
-| Dean | Open Learning | AI-chatbot, spraak, liedje herkennen, Wrapped, UX-tests |
+| _naam_ | Cyber Security | Accounts, vrienden via QR, privacy, noodbericht, SOS, repo-beveiliging |
+| _naam_ | Software | PWA-basis, timetable, Spotify, instellingen, beoordelingen |
+| _naam_ | IoT | Live map, drukte, aanmelden voor show, kompasmodus |
+| _naam_ | Open Learning | AI-chatbot, spraak, liedje herkennen, Wrapped, UX-tests |
 
 ## Aan de slag
 
@@ -72,20 +72,43 @@ De app gebruikt camera, locatie, microfoon en pushmeldingen. Die werken alleen v
 
 ## Werkwijze
 
+Alle taken staan als issues op het [projectbord](https://github.com/orgs/STA-NL07-Group-1/projects). We werken niet meer in Trello.
+
+### Een taak oppakken
+
+1. Kies een issue in **To do** en zet jezelf als **Assignee**.
+2. Sleep de kaart naar **Bezig**.
+3. Maak een branch met het issuenummer erin:
+   ```bash
+   git checkout main && git pull
+   git checkout -b feature/12-accounts-login
+   ```
+4. Werk, commit en push:
+   ```bash
+   git add .
+   git commit -m "Korte beschrijving van wat je deed"
+   git push -u origin feature/12-accounts-login
+   ```
+5. Open op GitHub een pull request en zet in de beschrijving `Closes #12`.
+6. Vraag een teamgenoot om een review. De kaart staat dan in **Review**.
+7. Na goedkeuring en groene checks: **Squash and merge** en **Delete branch**. Het issue sluit vanzelf en de kaart gaat naar **Klaar**.
+
+### Branchnamen
+
+| Soort | Voorbeeld |
+| --- | --- |
+| Nieuwe feature | `feature/12-accounts-login` |
+| Bug oplossen | `fix/27-chat-laadt-niet` |
+| Documentatie | `docs/34-api-afspraken` |
+| Overig (config, opruimen) | `chore/40-dependencies` |
+
+### Regels
+
 - `main` is beveiligd: niemand pusht er direct op.
-- Werk per taak in een eigen branch, bijvoorbeeld `feature/qr-vrienden` of `fix/login-bug`.
-- Open een pull request en koppel het issue met `Closes #nummer`.
-- Elke pull request heeft **1 goedkeuring** van een teamgenoot nodig en de checks moeten groen zijn.
-- We mergen met **Squash and merge**.
-
-```bash
-git checkout main && git pull
-git checkout -b feature/naam-van-taak
-# werken en committen
-git push -u origin feature/naam-van-taak
-```
-
-Taken en planning staan op het [projectbord](https://github.com/orgs/STA-NL07-Group-1/projects).
+- Elke pull request heeft **1 goedkeuring** van een teamgenoot nodig; je eigen pull request goedkeuren kan niet.
+- De security-checks moeten groen zijn voordat je kunt mergen.
+- Opmerkingen uit een review moeten opgelost zijn voordat je kunt mergen.
+- Nieuwe taak of bug gevonden? Maak een issue aan met de templates **Feature of taak** of **Bug melden**.
 
 ## Security
 
