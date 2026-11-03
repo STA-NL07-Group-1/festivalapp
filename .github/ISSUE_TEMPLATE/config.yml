@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Beveiligingsprobleem melden
+    url: https://github.com/STA-NL07-Group-1/festivalapp/security/advisories/new
+    about: Meld kwetsbaarheden privé, niet via een openbaar issue.

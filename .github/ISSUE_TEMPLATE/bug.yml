@@ -1,0 +1,53 @@
+name: Bug melden
+description: Iets werkt niet zoals het hoort
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: wat
+    attributes:
+      label: Wat gaat er mis?
+      description: Beschrijf kort wat er gebeurt.
+    validations:
+      required: true
+  - type: textarea
+    id: stappen
+    attributes:
+      label: Stappen om het na te doen
+      placeholder: |
+        1. Ga naar ...
+        2. Klik op ...
+        3. Zie fout
+    validations:
+      required: true
+  - type: textarea
+    id: verwacht
+    attributes:
+      label: Wat had je verwacht?
+    validations:
+      required: true
+  - type: dropdown
+    id: apparaat
+    attributes:
+      label: Apparaat
+      multiple: true
+      options:
+        - iPhone
+        - Android
+        - Desktop
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser en versie
+      placeholder: Safari 19, Chrome 140, als geïnstalleerde PWA, ...
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots of foutmeldingen
+      description: Sleep hier afbeeldingen in. Haal wachtwoorden, tokens en persoonsgegevens weg.
+  - type: markdown
+    attributes:
+      value: |
+        **Is het een beveiligingsprobleem?** Maak dan geen issue aan, maar meld het privé via het tabblad Security → Report a vulnerability.
