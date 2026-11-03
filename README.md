@@ -1,5 +1,8 @@
 # Festivalapp
 
+[![Security](https://github.com/STA-NL07-Group-1/festivalapp/actions/workflows/security.yml/badge.svg)](https://github.com/STA-NL07-Group-1/festivalapp/actions/workflows/security.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/STA-NL07-Group-1/festivalapp/badge)](https://scorecard.dev/viewer/?uri=github.com/STA-NL07-Group-1/festivalapp)
+
 Een Progressive Web App (PWA) voor festivalbezoekers: vind je vrienden op het terrein, stel je eigen timetable samen en blijf op de hoogte van updates en drukte. Gemaakt door STA-NL07 Groep 1.
 
 > **Status:** in ontwikkeling — Sprint 1 (Fundament)
@@ -39,6 +42,7 @@ festivalapp/
 ├── portal/     Beheerportal voor de organisatie
 ├── infra/      Hosting, Docker, deployment
 ├── docs/       API-afspraken, architectuur, privacybeleid
+├── .githooks/  Lokale secret-check vóór elke commit
 └── .github/    Workflows, CODEOWNERS, templates
 ```
 
@@ -63,7 +67,12 @@ festivalapp/
    cd festivalapp
    ```
 2. Kopieer `.env.example` naar `.env` en vul je eigen waarden in. Zet nooit echte keys in de repo.
-3. Installeer en start (volgt):
+3. Zet de secret-check aan, zodat je nooit per ongeluk een wachtwoord commit (eenmalig per computer):
+   ```bash
+   winget install Gitleaks.Gitleaks      # Mac: brew install gitleaks
+   git config core.hooksPath .githooks
+   ```
+4. Installeer en start (volgt):
    ```bash
    # cd app && npm install && npm run dev
    ```
@@ -117,6 +126,10 @@ Bij elke pull request draaien automatisch:
 - **TruffleHog** — zoekt naar gelekte wachtwoorden, keys en tokens
 - **Semgrep** — zoekt naar onveilige code
 - **CodeQL** — code-analyse van GitHub
-- **Dependabot** — waarschuwt bij kwetsbare packages
+- **Dependency Review** — blokkeert nieuwe packages met bekende kwetsbaarheden
+- **Dependabot** — waarschuwt bij kwetsbare packages en houdt versies bij
+- **OpenSSF Scorecard** — wekelijkse security-score van de hele repo
+
+Lokaal controleert **Gitleaks** elke commit op secrets voordat hij gemaakt wordt (zie *Aan de slag*, stap 3).
 
 Een kwetsbaarheid gevonden? Lees [SECURITY.md](SECURITY.md) en meld het privé, niet via een openbaar issue.
