@@ -1,5 +1,8 @@
 # Festivalapp
 
+[![Security](https://github.com/STA-NL07-Group-1/festivalapp/actions/workflows/security.yml/badge.svg)](https://github.com/STA-NL07-Group-1/festivalapp/actions/workflows/security.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/STA-NL07-Group-1/festivalapp/badge)](https://scorecard.dev/viewer/?uri=github.com/STA-NL07-Group-1/festivalapp)
+
 Een Progressive Web App (PWA) voor festivalbezoekers: vind je vrienden op het terrein, stel je eigen timetable samen en blijf op de hoogte van updates en drukte. Gemaakt door STA-NL07 Groep 1.
 
 > **Status:** in ontwikkeling — Sprint 1 (Fundament)
@@ -39,6 +42,7 @@ festivalapp/
 ├── portal/     Beheerportal voor de organisatie
 ├── infra/      Hosting, Docker, deployment
 ├── docs/       API-afspraken, architectuur, privacybeleid
+├── .githooks/  Lokale secret-check vóór elke commit
 └── .github/    Workflows, CODEOWNERS, templates
 ```
 
@@ -63,7 +67,12 @@ festivalapp/
    cd festivalapp
    ```
 2. Kopieer `.env.example` naar `.env` en vul je eigen waarden in. Zet nooit echte keys in de repo.
-3. Installeer en start (volgt):
+3. Zet de secret-check aan, zodat je nooit per ongeluk een wachtwoord commit (eenmalig per computer):
+   ```bash
+   winget install Gitleaks.Gitleaks      # Mac: brew install gitleaks
+   git config core.hooksPath .githooks
+   ```
+4. Installeer en start (volgt):
    ```bash
    # cd app && npm install && npm run dev
    ```
@@ -72,20 +81,43 @@ De app gebruikt camera, locatie, microfoon en pushmeldingen. Die werken alleen v
 
 ## Werkwijze
 
+Alle taken staan als issues op het [projectbord](https://github.com/orgs/STA-NL07-Group-1/projects). We werken niet meer in Trello.
+
+### Een taak oppakken
+
+1. Kies een issue in **To do** en zet jezelf als **Assignee**.
+2. Sleep de kaart naar **Bezig**.
+3. Maak een branch met het issuenummer erin:
+   ```bash
+   git checkout main && git pull
+   git checkout -b feature/12-accounts-login
+   ```
+4. Werk, commit en push:
+   ```bash
+   git add .
+   git commit -m "Korte beschrijving van wat je deed"
+   git push -u origin feature/12-accounts-login
+   ```
+5. Open op GitHub een pull request en zet in de beschrijving `Closes #12`.
+6. Vraag een teamgenoot om een review. De kaart staat dan in **Review**.
+7. Na goedkeuring en groene checks: **Squash and merge** en **Delete branch**. Het issue sluit vanzelf en de kaart gaat naar **Klaar**.
+
+### Branchnamen
+
+| Soort | Voorbeeld |
+| --- | --- |
+| Nieuwe feature | `feature/12-accounts-login` |
+| Bug oplossen | `fix/27-chat-laadt-niet` |
+| Documentatie | `docs/34-api-afspraken` |
+| Overig (config, opruimen) | `chore/40-dependencies` |
+
+### Regels
+
 - `main` is beveiligd: niemand pusht er direct op.
-- Werk per taak in een eigen branch, bijvoorbeeld `feature/qr-vrienden` of `fix/login-bug`.
-- Open een pull request en koppel het issue met `Closes #nummer`.
-- Elke pull request heeft **1 goedkeuring** van een teamgenoot nodig en de checks moeten groen zijn.
-- We mergen met **Squash and merge**.
-
-```bash
-git checkout main && git pull
-git checkout -b feature/naam-van-taak
-# werken en committen
-git push -u origin feature/naam-van-taak
-```
-
-Taken en planning staan op het [projectbord](https://github.com/orgs/STA-NL07-Group-1/projects).
+- Elke pull request heeft **1 goedkeuring** van een teamgenoot nodig; je eigen pull request goedkeuren kan niet.
+- De security-checks moeten groen zijn voordat je kunt mergen.
+- Opmerkingen uit een review moeten opgelost zijn voordat je kunt mergen.
+- Nieuwe taak of bug gevonden? Maak een issue aan met de templates **Feature of taak** of **Bug melden**.
 
 ## Security
 
@@ -94,6 +126,10 @@ Bij elke pull request draaien automatisch:
 - **TruffleHog** — zoekt naar gelekte wachtwoorden, keys en tokens
 - **Semgrep** — zoekt naar onveilige code
 - **CodeQL** — code-analyse van GitHub
-- **Dependabot** — waarschuwt bij kwetsbare packages
+- **Dependency Review** — blokkeert nieuwe packages met bekende kwetsbaarheden
+- **Dependabot** — waarschuwt bij kwetsbare packages en houdt versies bij
+- **OpenSSF Scorecard** — wekelijkse security-score van de hele repo
+
+Lokaal controleert **Gitleaks** elke commit op secrets voordat hij gemaakt wordt (zie *Aan de slag*, stap 3).
 
 Een kwetsbaarheid gevonden? Lees [SECURITY.md](SECURITY.md) en meld het privé, niet via een openbaar issue.
