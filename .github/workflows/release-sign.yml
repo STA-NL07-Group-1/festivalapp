@@ -1,0 +1,38 @@
+name: Release ondertekenen
+
+# Maakt bij elke gepubliceerde release een bronarchief, ondertekent dat met
+# Sigstore (zonder eigen sleutels) en zet beide bestanden bij de release.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    name: sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # bestanden aan de release toevoegen
+      id-token: write   # ondertekenen met de identiteit van deze workflow
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Bronarchief maken en ondertekenen
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git archive --format=tar.gz --prefix="festivalapp-${TAG}/" -o "festivalapp-${TAG}.tar.gz" HEAD
+          cosign sign-blob --yes --bundle "festivalapp-${TAG}.tar.gz.sigstore.json" "festivalapp-${TAG}.tar.gz"
+      - name: Bestanden aan de release toevoegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" "festivalapp-${TAG}.tar.gz" "festivalapp-${TAG}.tar.gz.sigstore.json" --repo "$GITHUB_REPOSITORY" --clobber
