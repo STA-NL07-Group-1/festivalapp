@@ -133,3 +133,9 @@ Bij elke pull request draaien automatisch:
 Lokaal controleert **Gitleaks** elke commit op secrets voordat hij gemaakt wordt (zie *Aan de slag*, stap 3).
 
 Een kwetsbaarheid gevonden? Lees [SECURITY.md](SECURITY.md) en meld het privé, niet via een openbaar issue.
+
+## English summary
+
+Festivalapp is a Progressive Web App (PWA) for festival visitors: find your friends on the festival grounds, build your own timetable, and stay up to date with schedule changes and crowd levels. It is a school project by STA-NL07 Group 1 and is currently in development.
+
+The main documentation is in Dutch. Bug reports, questions and code comments in English are welcome via [issues](https://github.com/STA-NL07-Group-1/festivalapp/issues). Security issues: see [SECURITY.md](SECURITY.md).
