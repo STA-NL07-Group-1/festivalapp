@@ -1,0 +1,18 @@
+# Indeling van automatisch gegenereerde release notes
+changelog:
+  exclude:
+    labels:
+      - docs
+  categories:
+    - title: 🔒 Security
+      labels:
+        - security
+    - title: 🐛 Bugfixes
+      labels:
+        - bug
+    - title: 📦 Dependencies
+      labels:
+        - dependencies
+    - title: ✨ Features
+      labels:
+        - "*"
