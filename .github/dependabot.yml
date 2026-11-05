@@ -1,23 +1,17 @@
 version: 2
 updates:
+  # Alle npm-packages; dankzij npm workspaces ook die van app/, backend/ en portal/
   - package-ecosystem: npm
-    directory: /app
+    directory: /
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
-  - package-ecosystem: npm
-    directory: /backend
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-  - package-ecosystem: npm
-    directory: /portal
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
+    groups:
+      # Kleine updates van ontwikkeltools samen in één pull request
+      dev-tools:
+        dependency-type: development
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:

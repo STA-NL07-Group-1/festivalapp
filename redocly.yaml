@@ -1,0 +1,6 @@
+# Controle van docs/api.yaml (npm run lint:api)
+extends:
+  - recommended
+rules:
+  # Nu staan er alleen lokale adressen in; zet deze regel weer aan zodra het staging-adres bekend is.
+  no-server-example.com: off
