@@ -37,6 +37,22 @@ Buiten scope: diensten van derden (zoals GitHub, Spotify of hostingproviders), e
 
 Test nooit op de gegevens of accounts van andere gebruikers.
 
+## Een release controleren
+
+Elke release wordt automatisch ondertekend met [Sigstore](https://www.sigstore.dev) door de workflow `release-sign.yml`. Bij de release staan het bronarchief (`festivalapp-vX.Y.Z.tar.gz`) en de handtekening (`festivalapp-vX.Y.Z.tar.gz.sigstore.json`).
+
+Controleer met [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) dat het archief van ons komt en niet is aangepast:
+
+```bash
+cosign verify-blob festivalapp-v0.0.2.tar.gz \
+  --bundle festivalapp-v0.0.2.tar.gz.sigstore.json \
+  --certificate-identity "https://github.com/STA-NL07-Group-1/festivalapp/.github/workflows/release-sign.yml@refs/tags/v0.0.2" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+```
+
+Vervang `v0.0.2` door de versie die je controleert. `Verified OK` betekent dat het archief echt door onze workflow is gemaakt.
+
+
 ---
 
 ## English
