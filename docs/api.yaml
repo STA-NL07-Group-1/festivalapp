@@ -29,21 +29,30 @@ info:
     url: https://github.com/STA-NL07-Group-1/festivalapp/blob/main/LICENSE
 
 servers:
+  - url: http://localhost:4010
+    description: Mock-server (npm run mock)
   - url: http://localhost:3000/api/v1
-    description: Lokaal
-  - url: https://staging.example.org/api/v1
-    description: Staging (adres volgt)
+    description: Lokale backend
 
 tags:
   - name: Auth
+    description: Account, inloggen en sessies
   - name: Vrienden
+    description: Vrienden toevoegen via code of QR en beheren
   - name: Locatie
+    description: Eigen locatie delen en locaties van vrienden
   - name: Pins
+    description: Pins op de kaart
   - name: Timetable
+    description: Optredens, eigen timetable en die van vrienden
   - name: Chat
+    description: Berichten tussen vrienden
   - name: Meldingen
+    description: Web Push-abonnementen
   - name: Noodberichten
+    description: Berichten en noodberichten van de organisatie
   - name: SOS
+    description: SOS-meldingen naar EHBO en security
 
 security:
   - bearerAuth: []
@@ -51,8 +60,9 @@ security:
 paths:
   /auth/register:
     post:
-      tags: [Auth]
+      tags: [ Auth ]
       summary: Account aanmaken
+      operationId: register
       security: []
       requestBody:
         required: true
@@ -60,13 +70,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password, displayName]
+              required: [ email, password, displayName ]
               properties:
                 email: { type: string, format: email }
                 password:
                   type: string
                   minLength: 12
                   description: Wordt opgeslagen als Argon2id-hash, nooit leesbaar.
+                  maxLength: 128
                 displayName: { type: string, minLength: 1, maxLength: 40 }
       responses:
         '201':
@@ -83,8 +94,9 @@ paths:
 
   /auth/login:
     post:
-      tags: [Auth]
+      tags: [ Auth ]
       summary: Inloggen
+      operationId: login
       description: Na 5 mislukte pogingen per 15 minuten volgt `429`.
       security: []
       requestBody:
@@ -93,10 +105,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required: [ email, password ]
               properties:
                 email: { type: string, format: email }
-                password: { type: string }
+                password: { type: string, maxLength: 128 }
       responses:
         '200':
           description: Ingelogd; refresh token wordt als httpOnly cookie gezet
@@ -108,8 +120,9 @@ paths:
 
   /auth/refresh:
     post:
-      tags: [Auth]
+      tags: [ Auth ]
       summary: Nieuw access token ophalen met het refresh token (cookie)
+      operationId: refreshToken
       security: []
       responses:
         '200':
@@ -121,15 +134,19 @@ paths:
 
   /auth/logout:
     post:
-      tags: [Auth]
+      tags: [ Auth ]
       summary: Uitloggen en refresh token intrekken
+      operationId: logout
       responses:
         '204': { description: Uitgelogd }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /me:
     get:
-      tags: [Auth]
+      tags: [ Auth ]
       summary: Eigen profiel ophalen
+      operationId: getMe
       responses:
         '200':
           description: Profiel
@@ -138,15 +155,19 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     delete:
-      tags: [Auth]
+      tags: [ Auth ]
       summary: Account en alle gegevens verwijderen (AVG)
+      operationId: deleteMe
       responses:
         '204': { description: Account verwijderd }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /friends/codes:
     post:
-      tags: [Vrienden]
+      tags: [ Vrienden ]
       summary: Tijdelijke vriendcode (en QR) maken
+      operationId: createFriendCode
       description: |
         De code is willekeurig (cryptografisch veilig), 8 tekens, verloopt na 10 minuten
         en is één keer bruikbaar. Maximaal 10 codes per uur per gebruiker.
@@ -157,11 +178,14 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/FriendCode' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /friends/redeem:
     post:
-      tags: [Vrienden]
+      tags: [ Vrienden ]
       summary: Vriendcode inwisselen (getypt of gescand)
+      operationId: redeemFriendCode
       description: Ongeldige of verlopen codes geven allemaal dezelfde foutmelding, zodat codes niet te raden zijn.
       requestBody:
         required: true
@@ -169,7 +193,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [code]
+              required: [ code ]
               properties:
                 code: { type: string, pattern: '^[A-HJ-NP-Z2-9]{8}$' }
       responses:
@@ -180,11 +204,14 @@ paths:
               schema: { $ref: '#/components/schemas/Friend' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /friends:
     get:
-      tags: [Vrienden]
+      tags: [ Vrienden ]
       summary: Lijst van vrienden
+      operationId: listFriends
       responses:
         '200':
           description: Vrienden
@@ -193,22 +220,28 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Friend' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /friends/{friendId}:
     parameters:
       - $ref: '#/components/parameters/FriendId'
     delete:
-      tags: [Vrienden]
+      tags: [ Vrienden ]
       summary: Vriend verwijderen
+      operationId: removeFriend
       description: Daarna ziet geen van beiden nog de locatie of timetable van de ander.
       responses:
         '204': { description: Verwijderd }
         '404': { $ref: '#/components/responses/NotFound' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /me/location:
     put:
-      tags: [Locatie]
+      tags: [ Locatie ]
       summary: Eigen locatie bijwerken
+      operationId: updateMyLocation
       description: Alleen opgeslagen als locatiedelen aan staat. Locaties worden na 24 uur verwijderd.
       requestBody:
         required: true
@@ -218,20 +251,26 @@ paths:
       responses:
         '204': { description: Bijgewerkt }
         '400': { $ref: '#/components/responses/BadRequest' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /me/sharing:
     get:
-      tags: [Locatie]
+      tags: [ Locatie ]
       summary: Instellingen voor locatiedelen ophalen
+      operationId: getSharingSettings
       responses:
         '200':
           description: Instellingen
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SharingSettings' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     patch:
-      tags: [Locatie]
+      tags: [ Locatie ]
       summary: Locatiedelen aan/uit of per vriend aanpassen
+      operationId: updateSharingSettings
       requestBody:
         required: true
         content:
@@ -243,11 +282,14 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SharingSettings' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /friends/locations:
     get:
-      tags: [Locatie]
+      tags: [ Locatie ]
       summary: Laatst bekende locaties van vrienden
+      operationId: listFriendLocations
       description: Alleen vrienden die hun locatie met jou delen.
       responses:
         '200':
@@ -257,11 +299,14 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/FriendLocation' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /pins:
     get:
-      tags: [Pins]
+      tags: [ Pins ]
       summary: Eigen pins en pins die vrienden met je delen
+      operationId: listPins
       responses:
         '200':
           description: Pins
@@ -270,9 +315,12 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Pin' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
-      tags: [Pins]
+      tags: [ Pins ]
       summary: Pin droppen
+      operationId: createPin
       requestBody:
         required: true
         content:
@@ -284,6 +332,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Pin' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /pins/{pinId}:
     parameters:
@@ -292,16 +342,20 @@ paths:
         required: true
         schema: { type: string, format: uuid }
     delete:
-      tags: [Pins]
+      tags: [ Pins ]
       summary: Eigen pin verwijderen
+      operationId: deletePin
       responses:
         '204': { description: Verwijderd }
         '404': { $ref: '#/components/responses/NotFound' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /timetable:
     get:
-      tags: [Timetable]
+      tags: [ Timetable ]
       summary: Volledige timetable (podia en optredens)
+      operationId: getTimetable
       security: []
       responses:
         '200':
@@ -311,11 +365,14 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Slot' }
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /me/timetable:
     get:
-      tags: [Timetable]
+      tags: [ Timetable ]
       summary: Eigen persoonlijke timetable
+      operationId: getMyTimetable
       responses:
         '200':
           description: Gekozen optredens
@@ -324,28 +381,37 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Slot' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /me/timetable/{slotId}:
     parameters:
       - $ref: '#/components/parameters/SlotId'
     put:
-      tags: [Timetable]
+      tags: [ Timetable ]
       summary: Optreden toevoegen aan eigen timetable
+      operationId: addToMyTimetable
       responses:
         '204': { description: Toegevoegd }
         '404': { $ref: '#/components/responses/NotFound' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     delete:
-      tags: [Timetable]
+      tags: [ Timetable ]
       summary: Optreden verwijderen uit eigen timetable
+      operationId: removeFromMyTimetable
       responses:
         '204': { description: Verwijderd }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /friends/{friendId}/timetable:
     parameters:
       - $ref: '#/components/parameters/FriendId'
     get:
-      tags: [Timetable]
+      tags: [ Timetable ]
       summary: Timetable van een vriend
+      operationId: getFriendTimetable
       responses:
         '200':
           description: Optredens van de vriend
@@ -355,13 +421,16 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Slot' }
         '404': { $ref: '#/components/responses/NotFound' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /chats/{friendId}/messages:
     parameters:
       - $ref: '#/components/parameters/FriendId'
     get:
-      tags: [Chat]
+      tags: [ Chat ]
       summary: Berichten met een vriend (nieuwste eerst)
+      operationId: listMessages
       parameters:
         - name: before
           in: query
@@ -378,16 +447,19 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Message' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
-      tags: [Chat]
+      tags: [ Chat ]
       summary: Bericht sturen
+      operationId: sendMessage
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [text]
+              required: [ text ]
               properties:
                 text: { type: string, minLength: 1, maxLength: 1000 }
       responses:
@@ -396,38 +468,47 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /push/subscriptions:
     post:
-      tags: [Meldingen]
+      tags: [ Meldingen ]
       summary: Web Push-abonnement van dit apparaat registreren
+      operationId: createPushSubscription
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [endpoint, keys]
+              required: [ endpoint, keys ]
               properties:
                 endpoint: { type: string, format: uri }
                 keys:
                   type: object
-                  required: [p256dh, auth]
+                  required: [ p256dh, auth ]
                   properties:
                     p256dh: { type: string }
                     auth: { type: string }
       responses:
         '201': { description: Geregistreerd }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     delete:
-      tags: [Meldingen]
+      tags: [ Meldingen ]
       summary: Abonnement van dit apparaat verwijderen
+      operationId: deletePushSubscription
       responses:
         '204': { description: Verwijderd }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /announcements:
     get:
-      tags: [Noodberichten]
+      tags: [ Noodberichten ]
       summary: Actuele berichten van de organisatie (inclusief noodberichten)
+      operationId: listAnnouncements
       security: []
       responses:
         '200':
@@ -437,11 +518,14 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Announcement' }
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /admin/announcements:
     post:
-      tags: [Noodberichten]
+      tags: [ Noodberichten ]
       summary: Bericht of noodbericht versturen (beheerportal)
+      operationId: createAnnouncement
       description: |
         Alleen rol `organisator`. Noodberichten worden server-side ondertekend,
         zodat de app kan controleren dat het bericht echt van de organisatie komt.
@@ -452,9 +536,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [type, title, body]
+              required: [ type, title, body ]
               properties:
-                type: { type: string, enum: [info, update, nood] }
+                type: { type: string, enum: [ info, update, nood ] }
                 title: { type: string, maxLength: 80 }
                 body: { type: string, maxLength: 500 }
       responses:
@@ -464,11 +548,14 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Announcement' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /sos:
     post:
-      tags: [SOS]
+      tags: [ SOS ]
       summary: SOS-melding versturen
+      operationId: createSosReport
       description: |
         Stuurt locatie en type hulp naar EHBO/security. Maximaal 3 meldingen per 10 minuten
         per gebruiker tegen misbruik; een echte noodsituatie wordt nooit geblokkeerd zonder
@@ -479,9 +566,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [type, location]
+              required: [ type, location ]
               properties:
-                type: { type: string, enum: [medisch, veiligheid, anders] }
+                type: { type: string, enum: [ medisch, veiligheid, anders ] }
                 note: { type: string, maxLength: 200 }
                 location: { $ref: '#/components/schemas/LocationInput' }
       responses:
@@ -491,11 +578,14 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SosReport' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /admin/sos:
     get:
-      tags: [SOS]
+      tags: [ SOS ]
       summary: Openstaande SOS-meldingen (beheerportal)
+      operationId: listSosReports
       description: Alleen rollen `ehbo` en `security`.
       responses:
         '200':
@@ -506,6 +596,8 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/SosReport' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
 components:
   securitySchemes:
@@ -560,33 +652,33 @@ components:
   schemas:
     Error:
       type: object
-      required: [code, message]
+      required: [ code, message ]
       properties:
-        code: { type: string, examples: [invalid_input] }
-        message: { type: string, examples: [Ongeldige invoer] }
+        code: { type: string, examples: [ invalid_input ] }
+        message: { type: string, examples: [ Ongeldige invoer ] }
 
     AuthTokens:
       type: object
-      required: [accessToken, expiresIn]
+      required: [ accessToken, expiresIn ]
       properties:
         accessToken: { type: string }
-        expiresIn: { type: integer, description: Seconden, examples: [900] }
+        expiresIn: { type: integer, description: Seconden, examples: [ 900 ] }
 
     User:
       type: object
-      required: [id, displayName]
+      required: [ id, displayName ]
       properties:
         id: { type: string, format: uuid }
         displayName: { type: string }
         email: { type: string, format: email }
         role:
           type: string
-          enum: [bezoeker, organisator, ehbo, security]
+          enum: [ bezoeker, organisator, ehbo, security ]
           default: bezoeker
 
     Friend:
       type: object
-      required: [id, displayName]
+      required: [ id, displayName ]
       properties:
         id: { type: string, format: uuid }
         displayName: { type: string }
@@ -594,9 +686,9 @@ components:
 
     FriendCode:
       type: object
-      required: [code, expiresAt]
+      required: [ code, expiresAt ]
       properties:
-        code: { type: string, examples: [K7P3XQ9M] }
+        code: { type: string, examples: [ K7P3XQ9M ] }
         expiresAt: { type: string, format: date-time }
         qrPayload:
           type: string
@@ -604,7 +696,7 @@ components:
 
     LocationInput:
       type: object
-      required: [lat, lng]
+      required: [ lat, lng ]
       properties:
         lat: { type: number, minimum: -90, maximum: 90 }
         lng: { type: number, minimum: -180, maximum: 180 }
@@ -612,7 +704,7 @@ components:
 
     FriendLocation:
       type: object
-      required: [friendId, lat, lng, updatedAt]
+      required: [ friendId, lat, lng, updatedAt ]
       properties:
         friendId: { type: string, format: uuid }
         lat: { type: number }
@@ -634,18 +726,18 @@ components:
 
     PinInput:
       type: object
-      required: [lat, lng, label]
+      required: [ lat, lng, label ]
       properties:
         lat: { type: number, minimum: -90, maximum: 90 }
         lng: { type: number, minimum: -180, maximum: 180 }
-        label: { type: string, maxLength: 40, examples: [Ontmoetingsplek] }
+        label: { type: string, maxLength: 40, examples: [ Ontmoetingsplek ] }
         sharedWithFriends: { type: boolean, default: true }
 
     Pin:
       allOf:
         - $ref: '#/components/schemas/PinInput'
         - type: object
-          required: [id, ownerId]
+          required: [ id, ownerId ]
           properties:
             id: { type: string, format: uuid }
             ownerId: { type: string, format: uuid }
@@ -653,21 +745,21 @@ components:
 
     Slot:
       type: object
-      required: [id, act, stage, start, end]
+      required: [ id, act, stage, start, end ]
       properties:
         id: { type: string, format: uuid }
-        act: { type: string, examples: [Artiestnaam] }
-        stage: { type: string, examples: [Mainstage] }
+        act: { type: string, examples: [ Artiestnaam ] }
+        stage: { type: string, examples: [ Mainstage ] }
         start: { type: string, format: date-time }
         end: { type: string, format: date-time }
         status:
           type: string
-          enum: [gepland, verplaatst, geannuleerd]
+          enum: [ gepland, verplaatst, geannuleerd ]
           default: gepland
 
     Message:
       type: object
-      required: [id, senderId, text, sentAt]
+      required: [ id, senderId, text, sentAt ]
       properties:
         id: { type: string, format: uuid }
         senderId: { type: string, format: uuid }
@@ -676,10 +768,10 @@ components:
 
     Announcement:
       type: object
-      required: [id, type, title, body, createdAt]
+      required: [ id, type, title, body, createdAt ]
       properties:
         id: { type: string, format: uuid }
-        type: { type: string, enum: [info, update, nood] }
+        type: { type: string, enum: [ info, update, nood ] }
         title: { type: string }
         body: { type: string }
         createdAt: { type: string, format: date-time }
@@ -689,13 +781,13 @@ components:
 
     SosReport:
       type: object
-      required: [id, type, status, createdAt]
+      required: [ id, type, status, createdAt ]
       properties:
         id: { type: string, format: uuid }
-        type: { type: string, enum: [medisch, veiligheid, anders] }
+        type: { type: string, enum: [ medisch, veiligheid, anders ] }
         note: { type: string }
         location: { $ref: '#/components/schemas/LocationInput' }
         status:
           type: string
-          enum: [ontvangen, onderweg, afgehandeld]
+          enum: [ ontvangen, onderweg, afgehandeld ]
         createdAt: { type: string, format: date-time }
