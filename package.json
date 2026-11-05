@@ -1,0 +1,37 @@
+{
+  "name": "festivalapp",
+  "private": true,
+  "type": "module",
+  "description": "Festivalapp – gedeelde tooling (lint, tests, mock-server) voor de hele repo",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:api": "redocly lint docs/api.yaml",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "mock": "node tools/mock-server.js",
+    "check": "npm run lint && npm run lint:api && npm test"
+  },
+  "workspaces": [
+    "app",
+    "backend",
+    "portal"
+  ],
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@redocly/cli": "2.75.0",
+    "eslint": "10.14.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.7",
+    "globals": "17.14.0",
+    "openapi-sampler": "1.7.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0",
+    "yaml": "2.9.1"
+  }
+}

@@ -38,11 +38,13 @@ Een Progressive Web App (PWA) voor festivalbezoekers: vind je vrienden op het te
 
 ```
 festivalapp/
-├── app/        PWA frontend
-├── backend/    API, realtime-verbinding, pushmeldingen
+├── app/        PWA frontend (Vite + React)
+├── backend/    API, realtime-verbinding, pushmeldingen (Node.js + TypeScript)
 ├── portal/     Beheerportal voor de organisatie
 ├── infra/      Hosting, Docker, deployment
-├── docs/       API-afspraken, architectuur, privacybeleid
+├── docs/       API-afspraken (api.yaml), ontwikkelen, architectuur
+├── tests/      Contracttests op de API
+├── tools/      Mock-server
 ├── .githooks/  Lokale secret-check vóór elke commit
 └── .github/    Workflows, CODEOWNERS, templates
 ```
@@ -60,23 +62,31 @@ festivalapp/
 
 ## Aan de slag
 
-> De techstack wordt in Sprint 1 vastgesteld. Deze sectie vullen we aan zodra die bekend is.
+**Techstack:** Vite + React met `vite-plugin-pwa` (app), Node.js + TypeScript met WebSockets (backend), PostgreSQL (database), ESLint en Vitest (codekwaliteit en tests).
 
-1. Clone de repo:
+1. Installeer **Node.js 24** (`winget install OpenJS.NodeJS.LTS`, of op een Mac `brew install node@24`).
+2. Clone de repo:
    ```bash
    git clone https://github.com/STA-NL07-Group-1/festivalapp.git
    cd festivalapp
    ```
-2. Kopieer `.env.example` naar `.env` en vul je eigen waarden in. Zet nooit echte keys in de repo.
-3. Zet de secret-check aan, zodat je nooit per ongeluk een wachtwoord commit (eenmalig per computer):
+3. Kopieer `.env.example` naar `.env` en vul je eigen waarden in. Zet nooit echte keys in de repo.
+4. Zet de secret-check aan, zodat je nooit per ongeluk een wachtwoord commit (eenmalig per computer):
    ```bash
    winget install Gitleaks.Gitleaks      # Mac: brew install gitleaks
    git config core.hooksPath .githooks
    ```
-4. Installeer en start (volgt):
+5. Installeer alles en controleer of het werkt:
    ```bash
-   # cd app && npm install && npm run dev
+   npm install
+   npm run check
    ```
+6. Nog geen backend? Start de mock-server op http://localhost:4010:
+   ```bash
+   npm run mock
+   ```
+
+Alle commando's, de mock-server en hoe je een eigen project toevoegt staan in [docs/ontwikkelen.md](docs/ontwikkelen.md).
 
 De app gebruikt camera, locatie, microfoon en pushmeldingen. Die werken alleen via **HTTPS** of `localhost`.
 
@@ -125,14 +135,17 @@ Alle taken staan als issues op het [projectbord](https://github.com/orgs/STA-NL0
 
 Bij elke pull request draaien automatisch:
 
+- **ESLint** — codekwaliteit, en blokkeert onveilige constructies zoals `eval` en `innerHTML`
+- **Contracttests** — bewaken de security-afspraken in `docs/api.yaml` (inloggen, rollen, rate limiting)
 - **TruffleHog** — zoekt naar gelekte wachtwoorden, keys en tokens
 - **Semgrep** — zoekt naar onveilige code
 - **CodeQL** — code-analyse van GitHub
+- **zizmor** — controleert de GitHub Actions-workflows zelf
 - **Dependency Review** — blokkeert nieuwe packages met bekende kwetsbaarheden
 - **Dependabot** — waarschuwt bij kwetsbare packages en houdt versies bij
 - **OpenSSF Scorecard** — wekelijkse security-score van de hele repo
 
-Lokaal controleert **Gitleaks** elke commit op secrets voordat hij gemaakt wordt (zie *Aan de slag*, stap 3).
+Lokaal controleert **Gitleaks** elke commit op secrets voordat hij gemaakt wordt (zie *Aan de slag*, stap 4).
 
 Een kwetsbaarheid gevonden? Lees [SECURITY.md](SECURITY.md) en meld het privé, niet via een openbaar issue.
 
