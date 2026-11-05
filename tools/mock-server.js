@@ -72,11 +72,18 @@ function send(res, status, data) {
   }
 }
 
+// Alleen de Vite-dev-server (5173) en Vite-preview (4173) op je eigen computer mogen de mock aanroepen
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+];
+
 function cors(req, res) {
-  const origin = req.headers.origin;
-  // Alleen de eigen computer, bijvoorbeeld de Vite-dev-server op http://localhost:5173
-  if (origin && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
+  const allowed = ALLOWED_ORIGINS.find((o) => o === req.headers.origin);
+  if (allowed) {
+    res.setHeader('Access-Control-Allow-Origin', allowed);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Prefer');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
