@@ -40,6 +40,19 @@ Fijn dat je meewerkt! Hier staat hoe we samenwerken. Lees ook de [gedragscode](C
 - Geen wachtwoorden, keys, tokens of persoonsgegevens in code, logs of screenshots.
 - Wijzigingen aan de API worden ook bijgewerkt in [`docs/api.yaml`](docs/api.yaml).
 
+## Developer Certificate of Origin (DCO)
+
+Met elke commit verklaar je dat je het recht hebt deze bijdrage te leveren onder de licentie van het project, volgens het [Developer Certificate of Origin](https://developercertificate.org). Dat doe je met een regel onderaan je commitbericht:
+
+    Signed-off-by: Voornaam Achternaam <adres@voorbeeld.nl>
+
+De hook in `.githooks/prepare-commit-msg` voegt die regel automatisch toe, als je `git config core.hooksPath .githooks` hebt ingesteld. Zonder hook gebruik je `git commit -s`. De check `dco` controleert dit bij elke pull request.
+
+**Vergeten?** Zet de regel achteraf onder alle commits van je branch:
+
+    git rebase --signoff origin/main
+    git push --force-with-lease
+
 ## Bugs en ideeën
 
 Gebruik de templates **Bug melden** of **Feature of taak** bij [nieuwe issues](https://github.com/STA-NL07-Group-1/festivalapp/issues/new/choose).
