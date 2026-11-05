@@ -39,6 +39,8 @@ Fijn dat je meewerkt! Hier staat hoe we samenwerken. Lees ook de [gedragscode](C
 - **Nieuwe functionaliteit krijgt tests** in de automatische testsuite.
 - Geen wachtwoorden, keys, tokens of persoonsgegevens in code, logs of screenshots.
 - Wijzigingen aan de API worden ook bijgewerkt in [`docs/api.yaml`](docs/api.yaml).
+- **Bugfix? Voeg een test toe** die de fout laat zien, zodat hij niet terugkomt (regressietest).
+- De testdekking moet minimaal **80%** blijven; `npm run check` controleert dit.
 
 ## Developer Certificate of Origin (DCO)
 
