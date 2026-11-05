@@ -48,4 +48,4 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm test
+      - run: npm run test:coverage

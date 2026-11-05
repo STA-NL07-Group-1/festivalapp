@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "mock": "node tools/mock-server.js",
-    "check": "npm run lint && npm run lint:api && npm test"
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run lint && npm run lint:api && npm run test:coverage"
   },
   "workspaces": [
     "app",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@redocly/cli": "2.75.0",
+    "@vitest/coverage-v8": "5.1.0",
     "eslint": "10.14.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "0.5.7",

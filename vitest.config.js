@@ -4,6 +4,15 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    coverage: {
+      provider: 'v8',
+      // Alle eigen code; tests en configuratie tellen niet mee
+      include: ['tools/**/*.{js,ts}', 'app/src/**/*.{js,jsx,ts,tsx}', 'backend/src/**/*.{js,ts}', 'portal/src/**/*.{js,jsx,ts,tsx}'],
+      exclude: ['**/*.test.*', '**/*.config.*'],
+      reporter: ['text', 'html'],
+      // Silver-eis van OpenSSF Best Practices: minimaal 80% statement coverage
+      thresholds: { statements: 80 },
+    },
     projects: [
       {
         test: {
