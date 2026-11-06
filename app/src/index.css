@@ -726,6 +726,11 @@ textarea {
   inset: 0;
   background: var(--surface);
 }
+/* Donkere kaart zonder aparte kaartdienst: tegels omkeren en terugdraaien naar
+   de juiste kleurtint, met een vleugje paars zodat hij bij de app past. */
+.map-dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(200deg) brightness(0.85) contrast(0.9) saturate(0.6);
+}
 .map-overlay {
   position: absolute;
   left: 12px;
