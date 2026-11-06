@@ -1,6 +1,5 @@
 name: CI
 
-# Codekwaliteit en tests voor de hele repo: ESLint, controle van docs/api.yaml en Vitest.
 on:
   pull_request:
   push:
@@ -9,43 +8,38 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  lint:
-    name: lint
+  check:
+    name: Lint, typecheck, test en build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: festivalapp
+          POSTGRES_PASSWORD: festivalapp
+          POSTGRES_DB: festivalapp_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U festivalapp"
+          --health-interval 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://festivalapp:festivalapp@localhost:5432/festivalapp_test
     steps:
-      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      # --ignore-scripts: installatiescripts van packages draaien niet (supply-chain-risico)
-      - run: npm ci --ignore-scripts
-      - run: npm run lint
-      - run: npm run lint:api
+      - uses: actions/checkout@v4
 
-  test:
-    name: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run test:coverage
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Database-constraints controleren
+        run: |
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f backend/db/constraints-test.sql

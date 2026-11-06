@@ -1,0 +1,35 @@
+{
+  "name": "@festivalapp/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../.env src/server.ts",
+    "start": "node src/server.ts",
+    "db:migrate": "node --env-file-if-exists=../.env scripts/migrate.ts",
+    "db:seed": "node --env-file-if-exists=../.env scripts/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "argon2": "^0.45.2",
+    "jose": "^6.2.15",
+    "pg": "^8.23.1",
+    "web-push": "^3.6.7",
+    "ws": "^8.22.1",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.23.1",
+    "@types/web-push": "^3.6.4",
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

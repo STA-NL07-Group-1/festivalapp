@@ -1,25 +1,20 @@
 #!/bin/sh
-# Controleert vóór elke commit of er wachtwoorden, keys of tokens in je wijzigingen staan.
-# Eenmalig aanzetten per computer:  git config core.hooksPath .githooks
+# Blokkeert commits met geheimen (wachtwoorden, API-sleutels, tokens).
+# Wordt aangezet door `npm install` (git config core.hooksPath .githooks).
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --staged --redact --no-banner || {
+    echo ""
+    echo "✋ Gitleaks heeft een mogelijk geheim gevonden. Haal het uit je commit."
+    echo "   Vals alarm? Zet 'gitleaks:allow' als commentaar op die regel."
+    exit 1
+  }
+else
+  echo "ℹ️  Gitleaks is niet geïnstalleerd; geheimen-check overgeslagen (CI controleert wel)."
+  echo "   Installeren: https://github.com/gitleaks/gitleaks#installing"
+fi
 
-if ! command -v gitleaks >/dev/null 2>&1; then
-  echo ""
-  echo "  Gitleaks is niet geinstalleerd, dus je commit is niet gecontroleerd op secrets."
-  echo "  Installeer het eenmalig:"
-  echo "    Windows:  winget install Gitleaks.Gitleaks   (daarna terminal herstarten)"
-  echo "    Mac:      brew install gitleaks"
-  echo ""
+# Nooit .env-bestanden committen
+if git diff --cached --name-only | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$' >/dev/null; then
+  echo "✋ Je probeert een .env-bestand te committen. Dat mag niet."
   exit 1
 fi
-
-gitleaks git --pre-commit --staged --redact --verbose
-status=$?
-
-if [ $status -ne 0 ]; then
-  echo ""
-  echo "  Commit geblokkeerd: er lijkt een secret in je wijzigingen te staan."
-  echo "  Haal het weg, zet het in .env en probeer opnieuw."
-  echo ""
-fi
-
-exit $status

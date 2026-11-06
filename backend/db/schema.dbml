@@ -1,91 +1,86 @@
-// Databasemodel Festivalapp. Plak dit bestand in dbdiagram.io.
-// De bron is migrations/0001_init.sql. Pas dit bestand mee aan bij een nieuwe migratie.
+// Festivalapp — databasediagram
+// Plak dit bestand in https://dbdiagram.io om het diagram te zien.
+// Bron van waarheid is migrations/0001_init.sql; houd dit bestand daarmee gelijk.
 
 Project festivalapp {
   database_type: 'PostgreSQL'
+  Note: 'Eén festival per installatie. Geheimen alleen als hash. Alleen de laatste locatie per gebruiker.'
 }
+
+Enum user_role { bezoeker organisatie beheerder }
+Enum app_theme { systeem licht donker }
+Enum app_locale { nl en }
+Enum ticket_status { geldig gekoppeld ingetrokken }
+Enum pin_visibility { prive vrienden }
+Enum performance_status { gepland vertraagd verplaatst geannuleerd }
+Enum announcement_level { info waarschuwing nood }
+Enum sos_status { open in_behandeling afgehandeld }
+Enum crowd_level { rustig gemiddeld druk vol }
 
 TableGroup accounts {
-  users
-  refresh_tokens
-  festivals
   tickets
+  users
+  sessions
 }
 
-TableGroup vrienden {
+TableGroup sociaal {
   friend_codes
   friendships
-  location_hidden_friends
-}
-
-TableGroup timetable {
-  stages
-  acts
-  performances
-  favorites
-}
-
-TableGroup kaart {
-  user_locations
-  map_pins
-}
-
-TableGroup chat_en_push {
+  locations
+  pins
   messages
+}
+
+TableGroup programma {
+  stages
+  performances
+  timetable_entries
+  show_signups
+  crowd_readings
+}
+
+TableGroup organisatie {
   push_subscriptions
-  notification_preferences
-}
-
-TableGroup veiligheid {
   announcements
-  sos_reports
-}
-
-Table users {
-  id uuid [pk, default: `gen_random_uuid()`]
-  username text [not null, note: 'Uniek, 3 tot 40 tekens, hoofdletters tellen niet mee']
-  email text [not null, note: 'Uniek, hoofdletters tellen niet mee']
-  password_hash text [not null, note: 'Argon2id']
-  role text [not null, default: 'bezoeker', note: 'bezoeker, organisator, ehbo of security']
-  language text [not null, default: 'nl', note: 'nl of en']
-  theme text [not null, default: 'system', note: 'system, light of dark']
-  location_sharing_enabled boolean [not null, default: false]
-  created_at timestamptz [not null, default: `now()`]
-}
-
-Table refresh_tokens {
-  id uuid [pk, default: `gen_random_uuid()`]
-  user_id uuid [not null, ref: > users.id]
-  token_hash text [not null, unique]
-  created_at timestamptz [not null, default: `now()`]
-  expires_at timestamptz [not null]
-  revoked_at timestamptz
-}
-
-Table festivals {
-  id uuid [pk, default: `gen_random_uuid()`]
-  name text [not null]
-  starts_at timestamptz [not null]
-  ends_at timestamptz [not null]
+  sos_alerts
+  audit_log
 }
 
 Table tickets {
   id uuid [pk, default: `gen_random_uuid()`]
-  festival_id uuid [not null, ref: > festivals.id]
-  external_reference text [not null]
-  email text [not null]
-  invite_token_hash text [not null, unique, note: 'Hash van de link uit de ticketmail']
-  invite_expires_at timestamptz [not null]
-  invite_sent_at timestamptz
-  user_id uuid [ref: > users.id, note: 'Leeg tot de link is gebruikt']
-  claimed_at timestamptz
-  revoked_at timestamptz
-  checked_out_at timestamptz [note: 'Festival verlaten']
+  code_hash text [not null, unique, note: 'SHA-256 van de ticketcode']
+  ticket_type text [not null, default: 'weekend']
+  valid_from timestamptz [not null]
+  valid_until timestamptz [not null]
+  status ticket_status [not null, default: 'geldig']
   created_at timestamptz [not null, default: `now()`]
+}
 
-  indexes {
-    (festival_id, external_reference) [unique]
-  }
+Table users {
+  id uuid [pk, default: `gen_random_uuid()`]
+  ticket_id uuid [unique, ref: - tickets.id]
+  email citext [not null, unique]
+  password_hash text [not null, note: 'argon2id']
+  display_name text [not null, note: '1–40 tekens']
+  role user_role [not null, default: 'bezoeker']
+  theme app_theme [not null, default: 'systeem']
+  locale app_locale [not null, default: 'nl']
+  share_location boolean [not null, default: false]
+  share_timetable boolean [not null, default: false]
+  failed_logins integer [not null, default: 0]
+  locked_until timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table sessions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  refresh_token_hash text [not null, unique]
+  user_agent text
+  created_at timestamptz [not null, default: `now()`]
+  expires_at timestamptz [not null]
+  revoked_at timestamptz
 }
 
 Table friend_codes {
@@ -93,143 +88,138 @@ Table friend_codes {
   user_id uuid [not null, ref: > users.id]
   code_hash text [not null, unique]
   created_at timestamptz [not null, default: `now()`]
-  expires_at timestamptz [not null, note: 'Maximaal 10 minuten geldig']
+  expires_at timestamptz [not null, note: 'max. 15 minuten na created_at']
   used_at timestamptz
+  used_by uuid [ref: > users.id]
 }
 
 Table friendships {
-  user_low_id uuid [not null, ref: > users.id, note: 'Altijd de laagste UUID van het paar']
-  user_high_id uuid [not null, ref: > users.id]
+  user_a uuid [not null, ref: > users.id]
+  user_b uuid [not null, ref: > users.id]
   created_at timestamptz [not null, default: `now()`]
-
   indexes {
-    (user_low_id, user_high_id) [pk]
+    (user_a, user_b) [pk]
   }
+  Note: 'user_a < user_b: één rij per vriendenpaar'
 }
 
-Table location_hidden_friends {
-  user_id uuid [not null, ref: > users.id]
-  friend_id uuid [not null, ref: > users.id]
-
-  indexes {
-    (user_id, friend_id) [pk]
-  }
-}
-
-Table stages {
-  id uuid [pk, default: `gen_random_uuid()`]
-  festival_id uuid [not null, ref: > festivals.id]
-  name text [not null]
-  latitude "double precision" [not null]
-  longitude "double precision" [not null]
-
-  indexes {
-    (festival_id, name) [unique]
-  }
-}
-
-Table acts {
-  id uuid [pk, default: `gen_random_uuid()`]
-  name text [not null, unique]
-}
-
-Table performances {
-  id uuid [pk, default: `gen_random_uuid()`]
-  act_id uuid [not null, ref: > acts.id]
-  stage_id uuid [not null, ref: > stages.id]
-  starts_at timestamptz [not null]
-  ends_at timestamptz [not null]
-  status text [not null, default: 'gepland', note: 'gepland, verplaatst of geannuleerd']
-  updated_at timestamptz [not null, default: `now()`]
-
-  Note: 'Heet Slot in de API. Op 1 podium kunnen geen 2 optredens tegelijk zijn.'
-}
-
-Table favorites {
-  user_id uuid [not null, ref: > users.id]
-  performance_id uuid [not null, ref: > performances.id]
-  created_at timestamptz [not null, default: `now()`]
-
-  indexes {
-    (user_id, performance_id) [pk]
-  }
-}
-
-Table user_locations {
-  user_id uuid [pk, ref: - users.id, note: 'Alleen de laatste locatie']
-  festival_id uuid [not null, ref: > festivals.id]
+Table locations {
+  user_id uuid [pk, ref: - users.id]
   latitude "double precision" [not null]
   longitude "double precision" [not null]
   accuracy_m real
-  recorded_at timestamptz [not null]
+  recorded_at timestamptz [not null, default: `now()`]
+  expires_at timestamptz [not null, note: 'max. 1 uur na recorded_at']
 }
 
-Table map_pins {
+Table pins {
   id uuid [pk, default: `gen_random_uuid()`]
-  owner_id uuid [not null, ref: > users.id]
-  festival_id uuid [not null, ref: > festivals.id]
-  label text [not null, note: '1 tot 40 tekens']
+  user_id uuid [not null, ref: > users.id]
+  label text [not null]
   latitude "double precision" [not null]
   longitude "double precision" [not null]
-  shared_with_friends boolean [not null, default: true]
+  visibility pin_visibility [not null, default: 'vrienden']
   created_at timestamptz [not null, default: `now()`]
 }
 
 Table messages {
   id uuid [pk, default: `gen_random_uuid()`]
-  client_message_id uuid [not null, note: 'Voorkomt dubbele berichten']
-  festival_id uuid [not null, ref: > festivals.id]
   sender_id uuid [not null, ref: > users.id]
-  receiver_id uuid [not null, ref: > users.id]
-  body text [not null, note: '1 tot 1000 tekens']
-  sent_at timestamptz [not null, default: `now()`]
+  recipient_id uuid [not null, ref: > users.id]
+  body text [not null, note: '1–1000 tekens']
+  created_at timestamptz [not null, default: `now()`]
   read_at timestamptz
+}
 
+Table stages {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name text [not null, unique]
+  latitude "double precision" [not null]
+  longitude "double precision" [not null]
+  capacity integer [not null]
+  sort_order integer [not null, default: 0]
+}
+
+Table performances {
+  id uuid [pk, default: `gen_random_uuid()`]
+  stage_id uuid [not null, ref: > stages.id]
+  artist text [not null]
+  description text
+  starts_at timestamptz [not null]
+  ends_at timestamptz [not null]
+  status performance_status [not null, default: 'gepland']
+  signup_capacity integer [note: 'NULL = geen aanmelding nodig']
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table timetable_entries {
+  user_id uuid [not null, ref: > users.id]
+  performance_id uuid [not null, ref: > performances.id]
+  created_at timestamptz [not null, default: `now()`]
   indexes {
-    (sender_id, client_message_id) [unique]
+    (user_id, performance_id) [pk]
   }
+}
+
+Table show_signups {
+  user_id uuid [not null, ref: > users.id]
+  performance_id uuid [not null, ref: > performances.id]
+  created_at timestamptz [not null, default: `now()`]
+  checked_in_at timestamptz
+  indexes {
+    (user_id, performance_id) [pk]
+  }
+}
+
+Table crowd_readings {
+  id bigint [pk, increment]
+  stage_id uuid [not null, ref: > stages.id]
+  device_id text [not null]
+  head_count integer [not null]
+  level crowd_level [not null]
+  measured_at timestamptz [not null, default: `now()`]
 }
 
 Table push_subscriptions {
   id uuid [pk, default: `gen_random_uuid()`]
   user_id uuid [not null, ref: > users.id]
-  endpoint text [not null, unique]
-  p256dh_key text [not null]
-  auth_key text [not null]
+  endpoint text [not null, unique, note: 'alleen https']
+  p256dh text [not null]
+  auth text [not null]
   created_at timestamptz [not null, default: `now()`]
-  last_used_at timestamptz
-}
-
-Table notification_preferences {
-  user_id uuid [not null, ref: > users.id]
-  type text [not null, note: 'chat, vriend, favoriete_act of timetable']
-  enabled boolean [not null, default: true]
-
-  indexes {
-    (user_id, type) [pk]
-  }
 }
 
 Table announcements {
   id uuid [pk, default: `gen_random_uuid()`]
-  festival_id uuid [not null, ref: > festivals.id]
-  type text [not null, note: 'info, update of nood']
-  title text [not null, note: '1 tot 80 tekens']
-  body text [not null, note: '1 tot 500 tekens']
-  signature text [note: 'Verplicht bij type nood']
-  created_by uuid [ref: > users.id]
+  author_id uuid [ref: > users.id]
+  level announcement_level [not null, default: 'info']
+  title_nl text [not null]
+  title_en text [not null]
+  body_nl text [not null]
+  body_en text [not null]
   created_at timestamptz [not null, default: `now()`]
+  expires_at timestamptz
 }
 
-Table sos_reports {
+Table sos_alerts {
   id uuid [pk, default: `gen_random_uuid()`]
-  festival_id uuid [not null, ref: > festivals.id]
   user_id uuid [ref: > users.id]
-  type text [not null, note: 'medisch, veiligheid of anders']
-  note text [note: 'Maximaal 200 tekens']
-  latitude "double precision" [not null]
-  longitude "double precision" [not null]
-  status text [not null, default: 'ontvangen', note: 'ontvangen, onderweg of afgehandeld']
+  latitude "double precision"
+  longitude "double precision"
+  message text
+  status sos_status [not null, default: 'open']
   handled_by uuid [ref: > users.id]
   created_at timestamptz [not null, default: `now()`]
+  resolved_at timestamptz
+}
+
+Table audit_log {
+  id bigint [pk, increment]
+  actor_id uuid [note: 'geen FK: blijft staan na accountverwijdering']
+  action text [not null, note: 'formaat: domein.actie']
+  target_type text
+  target_id text
+  details jsonb [not null, default: '{}']
+  created_at timestamptz [not null, default: `now()`]
+  Note: 'Append-only: UPDATE en DELETE worden door een trigger geweigerd'
 }
