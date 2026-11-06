@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  gitleaks:
-    name: Geheimen (Gitleaks)
+  secrets:
+    name: secrets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,18 +23,8 @@ jobs:
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz | tar -xz gitleaks
           ./gitleaks git --redact --no-banner .
 
-  npm-audit:
-    name: Kwetsbare dependencies (npm audit)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      - run: npm audit --omit=dev --audit-level=high
-
-  codeql:
-    name: Code-analyse (CodeQL)
+  sast:
+    name: sast
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -47,7 +37,7 @@ jobs:
       - uses: github/codeql-action/analyze@v3
 
   dependency-review:
-    name: Nieuwe dependencies (alleen bij PR)
+    name: dependency-review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -58,3 +48,13 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
+
+  npm-audit:
+    name: npm-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: npm audit --omit=dev --audit-level=high

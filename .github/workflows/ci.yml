@@ -9,8 +9,21 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    name: Lint, typecheck, test en build
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  test:
+    name: test
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -28,18 +41,12 @@ jobs:
       TEST_DATABASE_URL: postgres://festivalapp:festivalapp@localhost:5432/festivalapp_test
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
-
       - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
       - run: npm test
       - run: npm run build
-
       - name: Database-constraints controleren
-        run: |
-          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f backend/db/constraints-test.sql
+        run: psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f backend/db/constraints-test.sql
