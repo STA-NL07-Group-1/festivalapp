@@ -24,7 +24,10 @@ export function connectRealtime(): RealtimeConnection {
     if (closed) return
     const token = await getAccessToken()
     if (!token || closed) return scheduleRetry()
-    const url = `${API_URL.replace(/^http/, 'ws')}/ws?token=${encodeURIComponent(token)}`
+    // API_URL kan absoluut zijn (http://localhost:3000) of relatief (/api achter de webserver)
+    const base = new URL(API_URL, window.location.origin)
+    base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:'
+    const url = `${base.href.replace(/\/$/, '')}/ws?token=${encodeURIComponent(token)}`
     socket = new WebSocket(url)
     socket.onopen = () => {
       attempt = 0
