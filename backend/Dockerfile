@@ -15,6 +15,9 @@ ENV NODE_ENV=production
 WORKDIR /srv
 COPY --from=deps /srv/node_modules ./node_modules
 COPY --chown=node:node backend ./backend
+# Pakketten die in een andere versie nodig zijn (bijv. ajv 8 naast ajv 6 van ESLint)
+# zet npm in backend/node_modules: die moeten ook mee
+COPY --from=deps /srv/backend/node_modules ./backend/node_modules
 WORKDIR /srv/backend
 # Niet als root draaien
 USER node
