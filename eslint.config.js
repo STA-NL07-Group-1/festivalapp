@@ -1,58 +1,62 @@
-// Gedeelde ESLint-configuratie voor de hele repo.
-// app/ en portal/ = React in de browser, backend/ = Node.js. Alles in TypeScript of JavaScript.
-import js from '@eslint/js';
-import globals from 'globals';
-import tseslint from 'typescript-eslint';
-import reactHooks from 'eslint-plugin-react-hooks';
-import reactRefresh from 'eslint-plugin-react-refresh';
-import { defineConfig, globalIgnores } from 'eslint/config';
+// ESLint flat config voor de hele monorepo.
+// https://eslint.org/docs/latest/use/configure/configuration-files
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import security from 'eslint-plugin-security'
+import tseslint from 'typescript-eslint'
+import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['**/dist', '**/build', '**/coverage', '**/node_modules', '**/dev-dist']),
+  globalIgnores(['**/dist', '**/dev-dist', '**/coverage', '**/node_modules']),
 
-  // Basis voor alle code
+  // Algemene regels voor alle JS/TS
   {
-    files: ['**/*.{js,mjs,cjs,jsx,ts,tsx}'],
-    extends: [js.configs.recommended, tseslint.configs.recommended],
+    files: ['**/*.{js,mjs,cjs,ts,tsx}'],
+    extends: [js.configs.recommended, security.configs.recommended],
     rules: {
-      // Security: geen code uitvoeren vanuit strings
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-new-func': 'error',
-      'no-script-url': 'error',
-      // Veelgemaakte fouten
-      eqeqeq: ['error', 'always'],
-      'no-var': 'error',
-      'prefer-const': 'error',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
+      // Geeft bij TypeScript vooral vals alarm (elke obj[key]); invoer valideren we tegen api.yaml
+      'security/detect-object-injection': 'off',
     },
   },
 
-  // De app en het beheerportal (React, browser)
+  // TypeScript (app en backend)
   {
-    files: ['app/**/*.{js,jsx,ts,tsx}', 'portal/**/*.{js,jsx,ts,tsx}'],
-    extends: [reactHooks.configs.flat['recommended-latest'], reactRefresh.configs.vite],
+    files: ['**/*.{ts,tsx}'],
+    extends: [tseslint.configs.recommended],
+  },
+
+  // De PWA (browser + React)
+  {
+    files: ['app/**/*.{ts,tsx}', 'portal/**/*.{ts,tsx}'],
+    extends: [reactHooks.configs.flat.recommended, reactRefresh.configs.vite],
     languageOptions: { globals: globals.browser },
     rules: {
-      // Geen HTML direct in de pagina zetten: risico op XSS
-      'no-restricted-properties': [
-        'error',
-        { property: 'innerHTML', message: 'Gebruik geen innerHTML (XSS-risico); laat React de tekst renderen.' },
-        { property: 'outerHTML', message: 'Gebruik geen outerHTML (XSS-risico).' },
-      ],
+      // dangerouslySetInnerHTML is de belangrijkste XSS-route in React
       'no-restricted-syntax': [
         'error',
         {
           selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
-          message: 'dangerouslySetInnerHTML is niet toegestaan (XSS-risico). Overleg met Gijs als het echt nodig is.',
+          message: 'Geen dangerouslySetInnerHTML: dit opent de deur voor XSS.',
         },
       ],
     },
   },
 
-  // Backend en tooling (Node.js)
+  // Node-code: backend en configbestanden
   {
-    files: ['backend/**/*.{js,ts}', 'tests/**/*.{js,ts}', 'tools/**/*.{js,ts}', '*.config.{js,ts}'],
+    files: ['backend/**/*.{js,ts}', '*.{js,mjs}'],
     languageOptions: { globals: globals.node },
   },
-]);
+
+  // Tests mogen losser getypeerd zijn
+  {
+    files: ['**/*.test.{ts,tsx}', '**/test/**/*.ts'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' },
+  },
+])

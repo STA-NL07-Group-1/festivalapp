@@ -4,15 +4,22 @@
 # Standaard: iemand van het team reviewt
 *                    @STA-NL07-Group-1/developers
 
-# Gevoelige onderdelen: Cyber Security reviewt mee
-/backend/auth/       @SergeantAchron
-/infra/              @SergeantAchron @atlantezzz
-/.github/            @SergeantAchron
-/SECURITY.md         @SergeantAchron
-/.env.example        @SergeantAchron
+# App (PWA)
+/app/                   @GitHubNiek0
 
-# Per onderdeel: haal het # weg en vul de GitHub-naam in.
-# Let op: een onbekende of foute gebruikersnaam maakt CODEOWNERS ongeldig.
-/app/              @GitHubNiek0
-/backend/          @atlantezzz
-/portal/           @8moses
+# Beheerportal
+/portal/                @8moses
+
+# Backend en database
+/backend/               @atlantezzz
+/backend/db/            @atlantezzz @SergeantAchron
+/backend/api.yaml       @atlantezzz @SergeantAchron
+
+# Security-gevoelig: altijd ook Gijs
+/backend/src/security.ts  @atlantezzz @SergeantAchron
+/backend/src/routes/auth.ts @atlantezzz @SergeantAchron
+/backend/src/routes/chatbot.ts @VUL-IN-dean @SergeantAchron
+/.github/               @SergeantAchron
+/.githooks/             @SergeantAchron
+/package.json           @atlantezzz @SergeantAchron
+/package-lock.json      @atlantezzz @SergeantAchron     

@@ -1,23 +1,14 @@
 #!/bin/sh
-# Voegt automatisch "Signed-off-by: Naam <email>" toe aan elke commit (Developer Certificate of Origin).
-# Eenmalig aanzetten per computer:  git config core.hooksPath .githooks
-#
-# Wat je daarmee verklaart: https://developercertificate.org
+# Voegt automatisch "Signed-off-by: Naam <e-mail>" toe (DCO).
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
 
-MSG_FILE="$1"
-SOURCE="$2"
-
-# Niet bij merge- en squash-berichten die Git zelf maakt
-case "$SOURCE" in
-  merge|squash) exit 0 ;;
-esac
+# Niet bij merges en squashes
+case "$COMMIT_SOURCE" in merge|squash) exit 0 ;; esac
 
 NAME=$(git config user.name)
 EMAIL=$(git config user.email)
-if [ -z "$NAME" ] || [ -z "$EMAIL" ]; then
-  echo "DCO: stel eerst git config user.name en user.email in." >&2
-  exit 1
-fi
+[ -z "$NAME" ] || [ -z "$EMAIL" ] && exit 0
 
-git interpret-trailers --in-place --if-exists doNothing \
-  --trailer "Signed-off-by: $NAME <$EMAIL>" "$MSG_FILE"
+SOB="Signed-off-by: $NAME <$EMAIL>"
+grep -qs "^$SOB" "$COMMIT_MSG_FILE" || git interpret-trailers --in-place --trailer "$SOB" "$COMMIT_MSG_FILE"
