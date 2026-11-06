@@ -97,7 +97,7 @@ export function FriendsScreen({
           const loc = locationOf(f.id)
           return (
             <li key={f.id}>
-              <button type="button" className="row" onClick={() => setSelected(f)}>
+              <button type="button" className={`row ${loc ? 'located' : ''}`} onClick={() => setSelected(f)}>
                 <Avatar name={f.displayName} />
                 <span className="grow">
                   <strong>{f.displayName}</strong>

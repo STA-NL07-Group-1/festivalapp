@@ -40,7 +40,9 @@ export function AuthScreen() {
   }
 
   return (
-    <main className="auth">
+    // Het inlogscherm is altijd 'nacht': het eerste wat je ziet is de festivalsfeer
+    <main className="auth" data-theme="dark">
+      <div className="beams" aria-hidden="true" />
       <div className="auth-lang">
         <Segmented
           label="Taal / Language"
@@ -52,9 +54,11 @@ export function AuthScreen() {
           ]}
         />
       </div>
-      <img src="/logo.png" alt="" width={96} height={96} className="auth-logo" />
-      <h1>{t('app.name')}</h1>
-      <p className="muted">{t('auth.welcome')}</p>
+      <header className="auth-hero">
+        <img src="/logo.png" alt="" width={88} height={88} className="auth-logo" />
+        <h1>{t('app.name')}</h1>
+        <p>{t('auth.welcome')}</p>
+      </header>
 
       <form className="card form" onSubmit={submit}>
         <h2>{mode === 'login' ? t('auth.login') : t('auth.register')}</h2>
