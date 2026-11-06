@@ -1,5 +1,6 @@
 // Kleine bouwstenen van het designsysteem.
 import { useEffect, useId, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { initials } from '../lib/format'
 
 export function Screen({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
@@ -66,14 +67,16 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
   if (!open) return null
-  return (
+  // Via een portal direct in <body>, zodat het venster altijd boven de kaart en de tabbalk ligt
+  return createPortal(
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" aria-hidden="true" />
         <h2>{title}</h2>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
