@@ -42,7 +42,7 @@ function ClickToPlace({ active, onPlace }: { active: boolean; onPlace: (lat: num
 
 export function MapScreen() {
   const { t, locale } = useI18n()
-  const { me, updateMe } = useSession()
+  const { me, updateMe, dark } = useSession()
   const stages = useAsync(() => api.get<Stage[]>('/stages'))
   const crowd = useAsync(() => api.get<CrowdLevel[]>('/crowd'))
   const friends = useAsync(() => api.get<FriendLocation[]>('/friends/locations'))
@@ -131,10 +131,13 @@ export function MapScreen() {
     <section className="map-screen" aria-label={t('map.title')}>
       {!stages.loading && (
         <MapContainer center={center} zoom={17} className="map" zoomControl={false} attributionControl>
+          {/* Kaartstijl volgt het thema; 's nachts een donkere kaart zodat het scherm niet verblindt */}
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxZoom={19}
+            key={dark ? 'dark' : 'light'}
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url={`https://{s}.basemaps.cartocdn.com/${dark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`}
+            subdomains="abcd"
+            maxZoom={20}
           />
           <ClickToPlace active={placing} onPlace={(lat, lng) => setDraft({ lat, lng })} />
 

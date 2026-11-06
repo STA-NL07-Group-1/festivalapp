@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { api, ApiError, type Friend, type Performance, type Signup, type Stage } from '../api/client'
 import { StarIcon } from '../components/icons'
 import { Empty, ErrorNote, Screen, Segmented, Toast } from '../components/ui'
@@ -8,6 +8,9 @@ import { useAsync } from '../lib/useAsync'
 import { useRealtime } from '../state/session'
 
 type View = 'all' | 'mine' | 'friends'
+
+/** Elk podium een vaste kleur uit het logo, zodat je een podium in één oogopslag herkent. */
+const STAGE_COLORS = ['#ff2fb4', '#a43cf0', '#2a6dff', '#14c8b4', '#ff8a3d', '#e8e3ff']
 
 /** Groepeer optredens per festivaldag (gesorteerd). */
 // eslint-disable-next-line react-refresh/only-export-components
@@ -21,8 +24,70 @@ export function groupByDay(performances: Performance[]): Map<string, Performance
   return days
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
+export function isLive(p: Performance, now: number): boolean {
+  return p.status !== 'geannuleerd' && Date.parse(p.startsAt) <= now && now < Date.parse(p.endsAt)
+}
+
+/** Huidige tijd, elke 30 seconden bijgewerkt (voor "nu live"). */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+  return now
+}
+
+function OnStages({ stages, performances, color }: { stages: Stage[]; performances: Performance[]; color: (id: string) => string }) {
+  const { t, locale } = useI18n()
+  const now = useNow()
+  const today = festivalDay(new Date(now).toISOString())
+
+  return (
+    <section className="on-stages" aria-labelledby="on-stages-title">
+      <h2 id="on-stages-title">{t('timetable.onStages')}</h2>
+      <div className="on-stages-track">
+        {stages.map((stage) => {
+          const sets = performances.filter((p) => p.stageId === stage.id && p.status !== 'geannuleerd')
+          const live = sets.find((p) => isLive(p, now))
+          const next = sets.find((p) => Date.parse(p.startsAt) > now && festivalDay(p.startsAt) === today)
+          const progress = live
+            ? (now - Date.parse(live.startsAt)) / (Date.parse(live.endsAt) - Date.parse(live.startsAt))
+            : 0
+          return (
+            <article key={stage.id} className={`stage-tile ${live ? 'is-live' : ''}`} style={{ '--stage': color(stage.id) } as CSSProperties}>
+              <p className="stage-tile-name">{stage.name}</p>
+              {live ? (
+                <>
+                  <p className="stage-tile-status">
+                    <span className="live-dot" aria-hidden="true" /> {t('timetable.liveNow')}
+                  </p>
+                  <p className="stage-tile-artist">{live.artist}</p>
+                  <p className="stage-tile-time">{t('timetable.until', { time: formatTime(live.endsAt, locale) })}</p>
+                  <div className="stage-tile-progress" role="presentation">
+                    <span style={{ width: `${Math.round(progress * 100)}%` }} />
+                  </div>
+                </>
+              ) : next ? (
+                <>
+                  <p className="stage-tile-status">{t('timetable.startsAt', { time: formatTime(next.startsAt, locale) })}</p>
+                  <p className="stage-tile-artist">{next.artist}</p>
+                </>
+              ) : (
+                <p className="stage-tile-status muted">{t('timetable.doneToday')}</p>
+              )}
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 export function TimetableScreen({ initialFriend }: { initialFriend?: string | null }) {
   const { t, locale } = useI18n()
+  const now = useNow()
   const [view, setView] = useState<View>(initialFriend ? 'friends' : 'all')
   const [stageFilter, setStageFilter] = useState<string>('all')
   const [day, setDay] = useState<string | null>(null)
@@ -63,14 +128,17 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
   const mineIds = useMemo(() => new Set(mine.data?.map((p) => p.id)), [mine.data])
   const signedUp = useMemo(() => new Set(signups.data?.map((s) => s.performanceId)), [signups.data])
   const stageName = (id: string) => stages.data?.find((s) => s.id === id)?.name ?? ''
+  const stageColor = (id: string) => {
+    const index = stages.data?.findIndex((s) => s.id === id) ?? -1
+    return STAGE_COLORS[Math.max(index, 0) % STAGE_COLORS.length]!
+  }
 
   const source: Performance[] =
     view === 'all' ? (performances.data ?? []) : view === 'mine' ? (mine.data ?? []) : Array.isArray(friendTimetable.data) ? friendTimetable.data : []
   const filtered = source.filter((p) => stageFilter === 'all' || p.stageId === stageFilter)
   const byDay = groupByDay(filtered)
   const allDays = [...groupByDay(performances.data ?? []).keys()]
-
-  const today = festivalDay(new Date().toISOString())
+  const today = festivalDay(new Date(now).toISOString())
   const activeDay = day && allDays.includes(day) ? day : allDays.includes(today) ? today : (allDays[0] ?? null)
 
   async function toggleMine(p: Performance) {
@@ -98,6 +166,10 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
 
   return (
     <Screen title={t('tab.timetable')}>
+      {view === 'all' && stages.data && performances.data && (
+        <OnStages stages={stages.data} performances={performances.data} color={stageColor} />
+      )}
+
       <Segmented
         label={t('tab.timetable')}
         value={view}
@@ -123,19 +195,31 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
         </label>
       )}
 
-      <div className="chips" role="tablist" aria-label="Dag">
-        {allDays.map((d) => (
-          <button key={d} type="button" role="tab" aria-selected={activeDay === d} className={`chip ${activeDay === d ? 'active' : ''}`} onClick={() => setDay(d)}>
-            {formatDay(d, locale)}
-          </button>
-        ))}
+      <div className="days" role="tablist" aria-label={t('tab.timetable')}>
+        {allDays.map((d) => {
+          const [weekday, date] = formatDay(d, locale).split(/\s(.+)/)
+          return (
+            <button key={d} type="button" role="tab" aria-selected={activeDay === d} className="day" onClick={() => setDay(d)}>
+              <span className="day-name">{weekday}</span>
+              <span className="day-date">{date}</span>
+            </button>
+          )
+        })}
       </div>
+
       <div className="chips scroll" aria-label={t('timetable.allStages')}>
         <button type="button" className={`chip ${stageFilter === 'all' ? 'active' : ''}`} onClick={() => setStageFilter('all')}>
           {t('timetable.allStages')}
         </button>
         {stages.data?.map((s) => (
-          <button key={s.id} type="button" className={`chip ${stageFilter === s.id ? 'active' : ''}`} onClick={() => setStageFilter(s.id)}>
+          <button
+            key={s.id}
+            type="button"
+            className={`chip stage-chip ${stageFilter === s.id ? 'active' : ''}`}
+            style={{ '--stage': stageColor(s.id) } as CSSProperties}
+            onClick={() => setStageFilter(s.id)}
+          >
+            <span className="stage-swatch" aria-hidden="true" />
             {s.name}
           </button>
         ))}
@@ -148,39 +232,58 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
         <Empty>{t('timetable.friendEmpty', { name: friendName })}</Empty>
       )}
 
-      <ul className="list timetable">
-        {items.map((p) => (
-          <li key={p.id} className={`performance status-${p.status}`}>
-            <div className="time">
-              <strong>{formatTime(p.startsAt, locale)}</strong>
-              <span>{formatTime(p.endsAt, locale)}</span>
-            </div>
-            <div className="info">
-              <strong className="artist">{p.artist}</strong>
-              <span className="muted">{stageName(p.stageId)}</span>
-              {p.status !== 'gepland' && <span className={`badge ${p.status}`}>{t(`status.${p.status}`)}</span>}
-              {p.description && <span className="muted small">{p.description}</span>}
-              {p.signupCapacity ? (
-                <span className="signup">
-                  <button type="button" className={`button small ${signedUp.has(p.id) ? '' : 'primary'}`} onClick={() => void toggleSignup(p)}>
-                    {signedUp.has(p.id) ? t('timetable.signedUp') : t('timetable.signup')}
-                  </button>
-                  {!signedUp.has(p.id) && <span className="muted small">{t('timetable.limited')}</span>}
-                </span>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className={`star ${mineIds.has(p.id) ? 'on' : ''}`}
-              aria-pressed={mineIds.has(p.id)}
-              aria-label={mineIds.has(p.id) ? t('timetable.remove') : t('timetable.add')}
-              onClick={() => void toggleMine(p)}
+      <ol className="lineup">
+        {items.map((p) => {
+          const live = isLive(p, now)
+          return (
+            <li
+              key={p.id}
+              className={`set status-${p.status} ${live ? 'is-live' : ''}`}
+              style={{ '--stage': stageColor(p.stageId) } as CSSProperties}
             >
-              <StarIcon filled={mineIds.has(p.id)} />
-            </button>
-          </li>
-        ))}
-      </ul>
+              <time className="set-time" dateTime={p.startsAt}>
+                {formatTime(p.startsAt, locale)}
+                <span>{formatTime(p.endsAt, locale)}</span>
+              </time>
+              <div className="set-main">
+                <h3 className="set-artist">{p.artist}</h3>
+                <p className="set-meta">
+                  <span className="set-stage">{stageName(p.stageId)}</span>
+                  {live && (
+                    <span className="live-label">
+                      <span className="live-dot" aria-hidden="true" />
+                      {t('timetable.liveNow')}
+                    </span>
+                  )}
+                  {p.status !== 'gepland' && <span className={`badge ${p.status}`}>{t(`status.${p.status}`)}</span>}
+                </p>
+                {p.description && <p className="set-description">{p.description}</p>}
+                {p.signupCapacity ? (
+                  <p className="signup">
+                    <button
+                      type="button"
+                      className={`button small ${signedUp.has(p.id) ? 'outline' : 'primary'}`}
+                      onClick={() => void toggleSignup(p)}
+                    >
+                      {signedUp.has(p.id) ? t('timetable.signedUp') : t('timetable.signup')}
+                    </button>
+                    {!signedUp.has(p.id) && <span className="muted small">{t('timetable.limited')}</span>}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className={`star ${mineIds.has(p.id) ? 'on' : ''}`}
+                aria-pressed={mineIds.has(p.id)}
+                aria-label={mineIds.has(p.id) ? t('timetable.remove') : t('timetable.add')}
+                onClick={() => void toggleMine(p)}
+              >
+                <StarIcon filled={mineIds.has(p.id)} />
+              </button>
+            </li>
+          )
+        })}
+      </ol>
       <Toast message={toast} onDone={() => setToast(null)} />
     </Screen>
   )

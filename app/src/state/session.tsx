@@ -1,5 +1,5 @@
 // Sessie: ingelogde gebruiker, instellingen (thema/taal) en de realtime-verbinding.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   api,
   clearTokens,
@@ -21,6 +21,8 @@ interface Session {
   me: Me | null
   realtime: RealtimeConnection | null
   online: boolean
+  /** Donker thema actief (instelling of systeemvoorkeur) */
+  dark: boolean
   login(email: string, password: string): Promise<void>
   register(input: { ticketCode: string; email: string; password: string; displayName: string }): Promise<void>
   logout(): Promise<void>
@@ -31,11 +33,22 @@ interface Session {
 
 const SessionContext = createContext<Session | null>(null)
 
-function applyTheme(theme: Me['theme'] | undefined) {
-  const dark =
-    theme === 'donker' || ((theme ?? 'systeem') === 'systeem' && window.matchMedia?.('(prefers-color-scheme: dark)').matches)
+const DARK_QUERY = '(prefers-color-scheme: dark)'
+
+function subscribeToColorScheme(onChange: () => void) {
+  const media = window.matchMedia?.(DARK_QUERY)
+  media?.addEventListener('change', onChange)
+  return () => media?.removeEventListener('change', onChange)
+}
+
+/** Volgt de systeemvoorkeur voor donker/licht. */
+function usePrefersDark(): boolean {
+  return useSyncExternalStore(subscribeToColorScheme, () => window.matchMedia?.(DARK_QUERY).matches ?? true)
+}
+
+function applyTheme(dark: boolean) {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0f0920' : '#f7f5fc')
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0f0920' : '#f6f3fb')
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -46,6 +59,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState(navigator.onLine)
 
   const locale: Locale = me?.locale ?? localLocale
+  const prefersDark = usePrefersDark()
+  const dark = me?.theme === 'donker' || (me?.theme !== 'licht' && prefersDark)
 
   const endSession = useCallback(() => {
     clearTokens()
@@ -93,13 +108,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  useEffect(() => {
-    applyTheme(me?.theme)
-    const media = window.matchMedia?.('(prefers-color-scheme: dark)')
-    const listener = () => applyTheme(me?.theme)
-    media?.addEventListener('change', listener)
-    return () => media?.removeEventListener('change', listener)
-  }, [me?.theme])
+  useEffect(() => applyTheme(dark), [dark])
 
   useEffect(() => {
     document.documentElement.lang = locale
@@ -117,6 +126,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       me,
       realtime,
       online,
+      dark,
       async login(email, password) {
         await startSession(await api.post<AuthTokens>('/auth/login', { email, password }))
       },
@@ -143,7 +153,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [status, me, realtime, online, locale, startSession, endSession],
+    [status, me, realtime, online, dark, locale, startSession, endSession],
   )
 
   return (
