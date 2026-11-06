@@ -60,3 +60,9 @@ De hook in `.githooks/prepare-commit-msg` voegt die regel automatisch toe, als j
 Gebruik de templates **Bug melden** of **Feature of taak** bij [nieuwe issues](https://github.com/STA-NL07-Group-1/festivalapp/issues/new/choose).
 
 **Beveiligingsprobleem?** Maak geen openbaar issue aan, maar volg [SECURITY.md](SECURITY.md).
+
+## AI-tools
+
+In dit project schrijven we de code zelf. Code die gemaakt is met AI-tools zoals Claude komt niet in de repo. Iedereen moet zijn eigen onderdeel kunnen uitleggen en beschrijven in de eigen documenten.
+
+De check `ai-policy` controleert pull requests op commits die met Claude zijn gemaakt. Twijfel je of iets mag, bijvoorbeeld AI gebruiken om een foutmelding te begrijpen, vraag het dan eerst in de groepschat.

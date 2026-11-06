@@ -1,0 +1,38 @@
+name: AI-beleid
+
+# Controleert of commits in een pull request zijn gemaakt met hulp van Claude.
+# Volgens de teamafspraak in CONTRIBUTING.md is dat niet toegestaan.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ai-policy:
+    name: ai-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Commits controleren
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          found=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            msg=$(git log -1 --format='%B' "$c")
+            if printf '%s\n' "$msg" | grep -qiE '^co-authored-by:.*(claude|anthropic\.com)|generated with \[?claude code'; then
+              echo "::error::Commit $(git log -1 --format='%h %s' "$c") is gemaakt met hulp van een AI-tool. Volgens de teamafspraak in CONTRIBUTING.md is dat niet toegestaan. Overleg met het team voordat je verdergaat."
+              found=1
+            fi
+          done
+          exit $found
