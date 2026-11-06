@@ -28,6 +28,10 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 }
 
+// CARTO-kaarten (donker/licht) als er een sleutel is; anders OpenStreetMap met een donkerfilter.
+// De sleutel staat in de browser (zoals elke kaartsleutel): beperk hem in CARTO tot jullie domein.
+const CARTO_KEY = (import.meta.env.VITE_CARTO_KEY as string | undefined)?.trim()
+
 const SEND_EVERY_MS = 30_000
 const SEND_IF_MOVED_M = 15
 
@@ -130,15 +134,23 @@ export function MapScreen() {
   return (
     <section className="map-screen" aria-label={t('map.title')}>
       {!stages.loading && (
-        <MapContainer center={center} zoom={17} className="map" zoomControl={false} attributionControl>
-          {/* Kaartstijl volgt het thema; 's nachts een donkere kaart zodat het scherm niet verblindt */}
-          <TileLayer
-            key={dark ? 'dark' : 'light'}
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url={`https://{s}.basemaps.cartocdn.com/${dark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`}
-            subdomains="abcd"
-            maxZoom={20}
-          />
+        <MapContainer center={center} zoom={17} className={`map ${dark && !CARTO_KEY ? 'map-dark' : ''}`} zoomControl={false} attributionControl>
+          {CARTO_KEY ? (
+            // 's Nachts de donkere CARTO-kaart, zodat het scherm niet verblindt
+            <TileLayer
+              key={dark ? 'dark' : 'light'}
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              url={`https://basemaps.cartocdn.com/rastertiles/${dark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}.png?key=${encodeURIComponent(CARTO_KEY)}`}
+              maxZoom={20}
+            />
+          ) : (
+            // Zonder sleutel: OpenStreetMap; .map-dark in index.css maakt de tegels donker
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxZoom={19}
+            />
+          )}
           <ClickToPlace active={placing} onPlace={(lat, lng) => setDraft({ lat, lng })} />
 
           {stages.data?.map((stage) => {
