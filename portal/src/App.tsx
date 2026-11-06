@@ -41,7 +41,7 @@ function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   return (
     <main className="login">
       <form className="card" onSubmit={(e) => void submit(e)}>
-        <img src="/logo.png" alt="" width={64} height={64} />
+        <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" width={64} height={64} />
         <h1>Beheerportal</h1>
         <label>
           E-mailadres
@@ -126,7 +126,7 @@ export default function App() {
       <div className="layout">
         <aside className="sidebar">
           <div className="brand">
-            <img src="/logo.png" alt="" width={36} height={36} />
+            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" width={36} height={36} />
             <strong>Beheerportal</strong>
           </div>
           <nav aria-label="Beheer">

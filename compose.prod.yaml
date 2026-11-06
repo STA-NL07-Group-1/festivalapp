@@ -1,0 +1,65 @@
+# Productie op de VPS, bereikbaar via een eigen Cloudflare Tunnel (geen open poorten nodig):
+#   sudo docker compose -f compose.prod.yaml --env-file .env.production up -d --build
+# Zie deploy/README.md.
+name: festivalapp
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: festivalapp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: festivalapp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U festivalapp']
+      interval: 5s
+      retries: 10
+    # Geen poorten naar buiten: alleen de backend kan erbij
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgres://festivalapp:${POSTGRES_PASSWORD}@db:5432/festivalapp
+      CORS_ORIGINS: https://${DOMAIN:?zet DOMAIN in .env.production}
+      APP_URL: https://${DOMAIN}
+      TRUST_PROXY: cloudflare
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ['no-new-privileges:true']
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+      args:
+        VITE_CARTO_KEY: ${VITE_CARTO_KEY:-}
+    restart: unless-stopped
+    depends_on: [backend]
+    # Geen poorten naar buiten: alleen de tunnel hieronder praat met deze container
+    security_opt: ['no-new-privileges:true']
+
+  tunnel:
+    # Eigen tunnel voor de festivalapp; staat los van andere apps op deze server.
+    # In Cloudflare: public hostname festivalapp.<domein> → service http://web:80
+    image: cloudflare/cloudflared:2026.10.7
+    restart: unless-stopped
+    depends_on: [web]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?zet CLOUDFLARE_TUNNEL_TOKEN in .env.production}
+    security_opt: ['no-new-privileges:true']
+
+volumes:
+  pgdata:

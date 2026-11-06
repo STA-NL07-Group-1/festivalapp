@@ -1,0 +1,14 @@
+# Niet meesturen naar Docker: afhankelijkheden worden in de container geïnstalleerd,
+# en geheimen horen niet in een image.
+**/node_modules
+**/dist
+**/dev-dist
+**/coverage
+**/*.tsbuildinfo
+.git
+.github
+.githooks
+**/.env
+**/.env.*
+!**/.env.example
+*.zip

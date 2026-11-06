@@ -1,5 +1,8 @@
-// Vult een LEGE ontwikkeldatabase met demo-data: podia, een timetable van drie dagen
-// (vanaf vandaag), 50 tickets en een paar accounts. Weigert te draaien in productie.
+// Vult een LEGE database met demo-data: podia, een timetable van drie dagen (vanaf vandaag),
+// 50 tickets en een paar accounts met een bekend wachtwoord.
+//
+//   npm run db:seed                  alles (alleen lokaal; weigert in productie)
+//   node scripts/seed.ts --programma alleen podia + timetable, ook in productie toegestaan
 import { pathToFileURL } from 'node:url'
 import pg from 'pg'
 import { loadConfig } from '../src/config.ts'
@@ -21,7 +24,7 @@ const ARTISTS = [
   'Golden Hour', 'Noordzee Kabaal', 'Pixel Prinses', 'The Late Trains', 'Stroopwafel Soundsystem', 'Hemelsblauw',
 ]
 
-export async function seed(databaseUrl: string, log = console.log): Promise<void> {
+export async function seed(databaseUrl: string, log = console.log, { programOnly = false } = {}): Promise<void> {
   const client = new pg.Client({ connectionString: databaseUrl })
   await client.connect()
   try {
@@ -59,6 +62,12 @@ export async function seed(databaseUrl: string, log = console.log): Promise<void
           )
         }
       }
+    }
+
+    if (programOnly) {
+      await client.query('COMMIT')
+      log('Podia en timetable aangemaakt (zonder accounts en tickets).')
+      return
     }
 
     // Tickets DEMO-0001 … DEMO-0050
@@ -133,11 +142,12 @@ export async function seed(databaseUrl: string, log = console.log): Promise<void
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const config = loadConfig()
-  if (config.env === 'production') {
-    console.error('Seed draait niet in productie.')
+  const programOnly = process.argv.includes('--programma')
+  if (config.env === 'production' && !programOnly) {
+    console.error('Demo-accounts horen niet in productie. Gebruik: node scripts/seed.ts --programma')
     process.exit(1)
   }
-  seed(config.databaseUrl).catch((error: unknown) => {
+  seed(config.databaseUrl, console.log, { programOnly }).catch((error: unknown) => {
     console.error(error)
     process.exit(1)
   })

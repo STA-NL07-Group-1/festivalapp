@@ -30,7 +30,13 @@ export interface Deps {
 }
 
 function clientIp(req: IncomingMessage): string {
-  // Achter een proxy: zet TRUST_PROXY=1 zodat X-Forwarded-For gebruikt wordt
+  // Achter Cloudflare: TRUST_PROXY=cloudflare gebruikt het IP dat Cloudflare doorgeeft.
+  // Laat dan alleen Cloudflare-IP's toe op poort 80/443, anders is deze header te vervalsen.
+  if (process.env.TRUST_PROXY === 'cloudflare') {
+    const cf = req.headers['cf-connecting-ip']
+    if (typeof cf === 'string' && cf) return cf.trim()
+  }
+  // Achter een andere proxy: TRUST_PROXY=1 gebruikt X-Forwarded-For
   if (process.env.TRUST_PROXY === '1') {
     const forwarded = req.headers['x-forwarded-for']
     if (typeof forwarded === 'string') return forwarded.split(',')[0]!.trim()
