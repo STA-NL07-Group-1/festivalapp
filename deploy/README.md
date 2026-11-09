@@ -1,4 +1,4 @@
-# Deployen op de VPS
+# Deployen op de server (Educloud)
 
 De festivalapp draait in vier containers: `db` (PostgreSQL), `backend` (API + WebSocket),
 `web` (Caddy met de app op `/` en het portal op `/beheer`) en `tunnel` (Cloudflare Tunnel).
@@ -10,6 +10,15 @@ bezoeker ──HTTPS──▶ Cloudflare ──tunnel──▶ web (Caddy) ─�
                                                    └──▶ /*         app (PWA)
 ```
 
+De server staat op het schoolnetwerk van Fontys (Educloud) en heeft alleen een intern adres.
+Beheren doe je met de **Educloud VPN** aan:
+
+```bash
+ssh ubuntu@10.61.0.240
+```
+
+Alle commands voor dagelijks gebruik staan in Notion op de pagina **Belangrijke commands (server)**.
+
 ## Eenmalig: tunnel aanmaken in Cloudflare
 
 1. Cloudflare-dashboard → **Zero Trust** → **Networks** → **Tunnels** → **Create a tunnel**.
@@ -19,10 +28,10 @@ bezoeker ──HTTPS──▶ Cloudflare ──tunnel──▶ web (Caddy) ─�
 4. Bij **Public hostname**: subdomain `festivalapp`, domain `nulllabx.com`, type **HTTP**, URL `web:80`.
    Cloudflare maakt het DNS-record zelf aan.
 
-## Eenmalig: op de VPS
+## Eenmalig: op de server
 
 ```bash
-git clone https://github.com/<organisatie>/festivalapp.git ~/festivalapp
+git clone https://github.com/STA-NL07-Group-1/festivalapp.git ~/festivalapp
 cd ~/festivalapp
 cp deploy/env.production.example .env.production
 nano .env.production          # vul alles in (zie de uitleg in het bestand)
@@ -39,23 +48,45 @@ sudo docker compose -f compose.prod.yaml --env-file .env.production exec \
 
 Daarna: tickets importeren via `https://festivalapp.nulllabx.com/beheer` → Tickets.
 
-## Bijwerken na een merge naar main
+### Automatisch bijwerken installeren
 
 ```bash
-cd ~/festivalapp
-git pull
-sudo docker compose -f compose.prod.yaml --env-file .env.production up -d --build
+cp deploy/auto-deploy.sh ~/auto-deploy.sh
+chmod +x ~/auto-deploy.sh
+sudo cp deploy/festivalapp-deploy.service deploy/festivalapp-deploy.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now festivalapp-deploy.timer
 ```
 
-Nieuwe databasemigraties draaien automatisch bij het starten van de backend.
+## Automatisch bijwerken
+
+Een systemd-timer kijkt elke 2 minuten of er een nieuwe commit in `main` staat. Zo ja, dan haalt
+`auto-deploy.sh` de nieuwe versie op en bouwt de containers opnieuw. Nieuwe databasemigraties draaien
+daarna vanzelf bij het starten van de backend. Na een merge hoef je dus niets te doen.
+
+**Pas op de server geen bestanden in `~/festivalapp` aan.** De timer zet alles terug naar `main`.
+Wijzigingen gaan altijd via een pull request. Alleen `.env.production` pas je op de server aan.
+
+```bash
+# Loopt de timer? (kijk bij NEXT en LAST)
+systemctl list-timers festivalapp-deploy.timer
+# Wat deden de laatste deploys?
+journalctl -u festivalapp-deploy -n 30
+# Nu meteen deployen in plaats van wachten
+sudo systemctl start festivalapp-deploy.service
+```
+
+`flock` in de service zorgt dat er nooit twee deploys tegelijk lopen.
 
 ## Handig
 
 ```bash
 # Logs bekijken
-sudo docker compose -f compose.prod.yaml logs -f backend
+sudo docker compose -f compose.prod.yaml --env-file .env.production logs -f backend
 # Status
-sudo docker compose -f compose.prod.yaml ps
+sudo docker compose -f compose.prod.yaml --env-file .env.production ps
 # Back-up van de database
-sudo docker compose -f compose.prod.yaml exec db pg_dump -U festivalapp festivalapp > backup-$(date +%F).sql
+sudo docker compose -f compose.prod.yaml --env-file .env.production exec -T db pg_dump -U festivalapp festivalapp > backup-$(date +%F).sql
 ```
+
+> ⚠️ Gebruik nooit `down -v` of `docker system prune --volumes`. Dan is de hele database weg.
