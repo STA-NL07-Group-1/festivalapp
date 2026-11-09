@@ -7,15 +7,59 @@ Project festivalapp {
   Note: 'Eén festival per installatie. Geheimen alleen als hash. Alleen de laatste locatie per gebruiker.'
 }
 
-Enum user_role { bezoeker organisatie beheerder }
-Enum app_theme { systeem licht donker }
-Enum app_locale { nl en }
-Enum ticket_status { geldig gekoppeld ingetrokken }
-Enum pin_visibility { prive vrienden }
-Enum performance_status { gepland vertraagd verplaatst geannuleerd }
-Enum announcement_level { info waarschuwing nood }
-Enum sos_status { open in_behandeling afgehandeld }
-Enum crowd_level { rustig gemiddeld druk vol }
+Enum user_role {
+  bezoeker
+  organisatie
+  beheerder
+}
+
+Enum app_theme {
+  systeem
+  licht
+  donker
+}
+
+Enum app_locale {
+  nl
+  en
+}
+
+Enum ticket_status {
+  geldig
+  gekoppeld
+  ingetrokken
+}
+
+Enum pin_visibility {
+  prive
+  vrienden
+}
+
+Enum performance_status {
+  gepland
+  vertraagd
+  verplaatst
+  geannuleerd
+}
+
+Enum announcement_level {
+  info
+  waarschuwing
+  nood
+}
+
+Enum sos_status {
+  open
+  in_behandeling
+  afgehandeld
+}
+
+Enum crowd_level {
+  rustig
+  gemiddeld
+  druk
+  vol
+}
 
 TableGroup accounts {
   tickets
