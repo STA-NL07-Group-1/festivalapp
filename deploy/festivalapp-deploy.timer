@@ -1,0 +1,9 @@
+[Unit]
+Description=Elke 2 minuten kijken naar nieuwe commits
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
