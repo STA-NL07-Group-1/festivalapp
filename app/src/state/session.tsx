@@ -2,8 +2,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   api,
+  ApiError,
   clearTokens,
   hasStoredSession,
+  isNetworkOnline,
+  onNetworkChange,
+  setNetworkOnline,
   setSessionEndedHandler,
   storeTokens,
   type AuthTokens,
@@ -12,6 +16,7 @@ import {
 import { I18nProvider } from '../i18n'
 import { detectLocale } from '../i18n/translate'
 import type { Locale } from '../lib/format'
+import { clearOffline, loadOffline, saveOffline } from '../lib/offlineStore'
 import { connectRealtime, type RealtimeConnection } from '../lib/realtime'
 
 type Status = 'loading' | 'anonymous' | 'authenticated'
@@ -20,7 +25,10 @@ interface Session {
   status: Status
   me: Me | null
   realtime: RealtimeConnection | null
+  /** Er is internet en de server is bereikbaar */
   online: boolean
+  /** De live-verbinding (WebSocket) staat open */
+  live: boolean
   /** Donker thema actief (instelling of systeemvoorkeur) */
   dark: boolean
   login(email: string, password: string): Promise<void>
@@ -56,7 +64,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null)
   const [localLocale, setLocalLocale] = useState<Locale>(detectLocale)
   const [realtime, setRealtime] = useState<RealtimeConnection | null>(null)
-  const [online, setOnline] = useState(navigator.onLine)
+  const [online, setOnline] = useState(isNetworkOnline)
+  const [live, setLive] = useState(false)
 
   const locale: Locale = me?.locale ?? localLocale
   const prefersDark = usePrefersDark()
@@ -64,6 +73,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const endSession = useCallback(() => {
     clearTokens()
+    clearOffline()
     setMe(null)
     setStatus('anonymous')
   }, [])
@@ -76,10 +86,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     api
       .get<Me>('/me')
       .then((user) => {
+        saveOffline('me', user)
         setMe(user)
         setStatus('authenticated')
       })
-      .catch(() => endSession())
+      .catch((error: unknown) => {
+        // Zonder internet: niet uitloggen, maar verder met het bewaarde account
+        const stored = loadOffline<Me>('me')
+        if (error instanceof ApiError && error.status === 0 && stored) {
+          setMe(stored.data)
+          setStatus('authenticated')
+          return
+        }
+        endSession()
+      })
   }, [status, endSession])
 
   // Realtime-verbinding zolang je bent ingelogd
@@ -89,20 +109,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // Koppelen aan een extern systeem (WebSocket): hier hoort setState in een effect
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRealtime(connection)
-    const offStatus = connection.onStatus(setOnline)
+    const offStatus = connection.onStatus((connected) => {
+      setLive(connected)
+      // Lukt de live-verbinding, dan is er dus ook internet
+      if (connected) setNetworkOnline(true)
+    })
     return () => {
       offStatus()
       connection.close()
       setRealtime(null)
+      setLive(false)
     }
   }, [status])
 
   useEffect(() => {
-    const up = () => setOnline(true)
-    const down = () => setOnline(false)
+    const offNetwork = onNetworkChange(setOnline)
+    const up = () => {
+      // Het netwerk is terug: even de server proberen, dan weten we of er echt internet is
+      api.get('/health').catch(() => {})
+    }
+    const down = () => setNetworkOnline(false)
     window.addEventListener('online', up)
     window.addEventListener('offline', down)
     return () => {
+      offNetwork()
       window.removeEventListener('online', up)
       window.removeEventListener('offline', down)
     }
@@ -116,7 +146,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const startSession = useCallback(async (tokens: AuthTokens) => {
     storeTokens(tokens)
-    setMe(await api.get<Me>('/me'))
+    const user = await api.get<Me>('/me')
+    saveOffline('me', user)
+    setMe(user)
     setStatus('authenticated')
   }, [])
 
@@ -126,6 +158,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       me,
       realtime,
       online,
+      live,
       dark,
       async login(email, password) {
         await startSession(await api.post<AuthTokens>('/auth/login', { email, password }))
@@ -138,7 +171,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         endSession()
       },
       async updateMe(patch) {
-        setMe(await api.patch<Me>('/me', patch))
+        const user = await api.patch<Me>('/me', patch)
+        saveOffline('me', user)
+        setMe(user)
       },
       async deleteAccount() {
         await api.delete('/me')
@@ -153,7 +188,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [status, me, realtime, online, dark, locale, startSession, endSession],
+    [status, me, realtime, online, live, dark, locale, startSession, endSession],
   )
 
   return (

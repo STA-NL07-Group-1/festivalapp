@@ -10,6 +10,8 @@ export type FriendLocation = Schemas['FriendLocation']
 export type Pin = Schemas['Pin']
 export type Message = Schemas['Message']
 export type Stage = Schemas['Stage']
+export type MapPoint = Schemas['MapPoint']
+export type MapPointKind = Schemas['MapPointKind']
 export type Performance = Schemas['Performance']
 export type Signup = Schemas['Signup']
 export type CrowdLevel = Schemas['CrowdLevel']
@@ -30,6 +32,27 @@ export class ApiError extends Error {
     this.status = status
     this.code = code
   }
+}
+
+// Of de server bereikbaar is. navigator.onLine zegt alleen of er een netwerk is, niet of er
+// echt internet is (op een druk festivalterrein heb je vaak wel bereik maar geen data).
+// Daarom kijken we ook naar het resultaat van onze eigen verzoeken.
+let networkOnline = typeof navigator === 'undefined' ? true : navigator.onLine
+const networkListeners = new Set<(online: boolean) => void>()
+
+export function isNetworkOnline(): boolean {
+  return networkOnline
+}
+
+export function onNetworkChange(listener: (online: boolean) => void): () => void {
+  networkListeners.add(listener)
+  return () => networkListeners.delete(listener)
+}
+
+export function setNetworkOnline(online: boolean): void {
+  if (online === networkOnline) return
+  networkOnline = online
+  for (const listener of networkListeners) listener(online)
 }
 
 let accessToken: string | null = null
@@ -98,6 +121,7 @@ async function refresh(): Promise<boolean> {
       storeTokens((await res.json()) as AuthTokens)
       return true
     } catch {
+      setNetworkOnline(false)
       return false
     } finally {
       refreshing = null
@@ -129,8 +153,10 @@ export async function request<T = void>(method: string, path: string, body?: unk
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
+    setNetworkOnline(false)
     throw new ApiError(0, 'offline', 'offline')
   }
+  setNetworkOnline(true)
 
   if (res.status === 401 && !publicRoute && !retried && (await refresh())) {
     return request<T>(method, path, body, true)

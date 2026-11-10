@@ -888,6 +888,37 @@ textarea {
   border: 3px solid white;
   box-shadow: 0 0 0 10px rgb(42 109 255 / 0.25);
 }
+/* Laatst bekende eigen positie: grijs, zonder blauwe gloed */
+.marker-me.last-known span {
+  background: #8a83a3;
+  box-shadow: none;
+}
+/* Zonder internet zijn posities van vrienden niet actueel: iets doorzichtiger */
+.map.offline .marker-friend {
+  opacity: 0.6;
+}
+/* Kaartpunten van de organisatie (wifi, EHBO, water …) */
+.marker-point span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #170f2e;
+  font-size: 0.85rem;
+  font-weight: 800;
+  border: 2px solid #170f2e;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+}
+.marker-point.ehbo span {
+  color: #ffffff;
+  background: var(--danger-strong);
+  border-color: #ffffff;
+}
+.marker-point.wifi span {
+  border-color: var(--laser);
+}
 .leaflet-tooltip.stage-label {
   font-family: var(--display);
   font-size: 0.95rem;

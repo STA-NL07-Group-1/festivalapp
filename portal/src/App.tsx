@@ -5,12 +5,13 @@ import { api, ApiError, clearTokens, hasStoredSession, setSessionEndedHandler, s
 import { connectRealtime, type RealtimeConnection } from './lib/realtime'
 import { AnnouncementsPage } from './pages/AnnouncementsPage'
 import { CrowdPage } from './pages/CrowdPage'
+import { MapPointsPage } from './pages/MapPointsPage'
 import { SosPage } from './pages/SosPage'
 import { TicketsPage } from './pages/TicketsPage'
 import { TimetablePage } from './pages/TimetablePage'
 import { RealtimeContext } from './lib/realtimeContext'
 
-type Page = 'sos' | 'meldingen' | 'timetable' | 'drukte' | 'tickets'
+type Page = 'sos' | 'meldingen' | 'timetable' | 'kaartpunten' | 'drukte' | 'tickets'
 
 function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   const [error, setError] = useState<string | null>(null)
@@ -117,6 +118,7 @@ export default function App() {
     { id: 'sos', label: `🚨 SOS${openSos ? ` (${openSos})` : ''}`, show: true },
     { id: 'meldingen', label: '📣 Mededelingen', show: true },
     { id: 'timetable', label: '🗓️ Timetable', show: true },
+    { id: 'kaartpunten', label: '📍 Kaartpunten', show: true },
     { id: 'drukte', label: '👥 Drukte', show: true },
     { id: 'tickets', label: '🎟️ Tickets', show: me.role === 'beheerder' },
   ]
@@ -163,6 +165,7 @@ export default function App() {
           {page === 'sos' && <SosPage />}
           {page === 'meldingen' && <AnnouncementsPage />}
           {page === 'timetable' && <TimetablePage />}
+          {page === 'kaartpunten' && <MapPointsPage />}
           {page === 'drukte' && <CrowdPage />}
           {page === 'tickets' && me.role === 'beheerder' && <TicketsPage />}
         </main>

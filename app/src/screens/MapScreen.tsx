@@ -2,13 +2,14 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { CircleMarker, MapContainer, Marker, Popup, TileLayer, Tooltip, useMapEvents } from 'react-leaflet'
-import { api, type CrowdLevel, type FriendLocation, type Pin, type Stage } from '../api/client'
+import { api, type CrowdLevel, type FriendLocation, type MapPoint, type MapPointKind, type Pin, type Stage } from '../api/client'
 import { PinIcon } from '../components/icons'
 import { SosButton } from '../components/SosButton'
 import { Segmented, Sheet } from '../components/ui'
 import { useI18n } from '../i18n'
-import { distanceM, formatRelative, initials } from '../lib/format'
-import { useAsync } from '../lib/useAsync'
+import { distanceM, formatRelative, formatTime, initials } from '../lib/format'
+import { loadOffline, saveOffline } from '../lib/offlineStore'
+import { useAsync, useOfflineAsync } from '../lib/useAsync'
 import { useRealtime, useSession } from '../state/session'
 
 const CROWD_COLORS: Record<string, string> = {
@@ -23,6 +24,41 @@ const friendIcon = (name: string) =>
   L.divIcon({ className: 'marker-friend', html: `<span>${escapeHtml(initials(name))}</span>`, iconSize: [36, 36], iconAnchor: [18, 18] })
 const pinIcon = L.divIcon({ className: 'marker-pin', html: '<span>📍</span>', iconSize: [28, 28], iconAnchor: [14, 26] })
 const meIcon = L.divIcon({ className: 'marker-me', html: '<span></span>', iconSize: [20, 20], iconAnchor: [10, 10] })
+// Laatst bekende eigen positie (zonder actuele GPS): grijs in plaats van blauw
+const meLastIcon = L.divIcon({ className: 'marker-me last-known', html: '<span></span>', iconSize: [20, 20], iconAnchor: [10, 10] })
+
+// Kaartpunten van de organisatie: een vast teken per soort, zodat je ze ook zonder kleur herkent
+const POINT_SYMBOL: Record<MapPointKind, string> = {
+  wifi: '📶',
+  ehbo: '✚',
+  water: '💧',
+  toilet: 'WC',
+  ingang: '⇥',
+  uitgang: '⇤',
+  eten: '🍴',
+  activiteit: '★',
+  oplaadpunt: '€',
+  info: 'i',
+}
+const pointIcons = new Map<MapPointKind, L.DivIcon>()
+function pointIcon(kind: MapPointKind): L.DivIcon {
+  let icon = pointIcons.get(kind)
+  if (!icon) {
+    icon = L.divIcon({
+      className: `marker-point ${kind}`,
+      html: `<span>${escapeHtml(POINT_SYMBOL[kind])}</span>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+    })
+    pointIcons.set(kind, icon)
+  }
+  return icon
+}
+
+interface LastPosition {
+  latitude: number
+  longitude: number
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
@@ -46,13 +82,35 @@ function ClickToPlace({ active, onPlace }: { active: boolean; onPlace: (lat: num
 
 export function MapScreen() {
   const { t, locale } = useI18n()
-  const { me, updateMe, dark } = useSession()
-  const stages = useAsync(() => api.get<Stage[]>('/stages'))
+  const { me, updateMe, dark, online } = useSession()
+  // Podia, kaartpunten, pins en vrienden worden op de telefoon bewaard voor als er geen internet is.
+  // Drukte niet: een oude drukte-meting is eerder misleidend dan nuttig.
+  const stages = useOfflineAsync('stages', () => api.get<Stage[]>('/stages'))
+  const points = useOfflineAsync('map-points', () => api.get<MapPoint[]>('/map-points'))
   const crowd = useAsync(() => api.get<CrowdLevel[]>('/crowd'))
-  const friends = useAsync(() => api.get<FriendLocation[]>('/friends/locations'))
-  const pins = useAsync(() => api.get<Pin[]>('/pins'))
+  const friends = useOfflineAsync('friends-locations', () => api.get<FriendLocation[]>('/friends/locations'))
+  const pins = useOfflineAsync('pins', () => api.get<Pin[]>('/pins'))
+
+  // Internet terug (van offline naar online): alles opnieuw ophalen
+  const reloadStages = stages.reload
+  const reloadPoints = points.reload
+  const reloadFriends = friends.reload
+  const reloadPins = pins.reload
+  const reloadCrowd = crowd.reload
+  const wasOnline = useRef(online)
+  useEffect(() => {
+    const cameBack = online && !wasOnline.current
+    wasOnline.current = online
+    if (!cameBack) return
+    void reloadStages()
+    void reloadPoints()
+    void reloadFriends()
+    void reloadPins()
+    void reloadCrowd()
+  }, [online, reloadStages, reloadPoints, reloadFriends, reloadPins, reloadCrowd])
 
   const [myPosition, setMyPosition] = useState<GeolocationCoordinates | null>(null)
+  const [lastPosition] = useState(() => loadOffline<LastPosition>('my-position'))
   const [geoError, setGeoError] = useState(false)
   const [placing, setPlacing] = useState(false)
   const [draft, setDraft] = useState<{ lat: number; lng: number } | null>(null)
@@ -76,6 +134,15 @@ export function MapScreen() {
   )
   const setPins = pins.setData
   useRealtime<Pin>('pin.created', useCallback((p) => setPins((list) => [p, ...(list ?? [])]), [setPins]))
+  const setPoints = points.setData
+  useRealtime<MapPoint>(
+    'map_point.update',
+    useCallback((point) => setPoints((list) => [...(list ?? []).filter((x) => x.id !== point.id), point]), [setPoints]),
+  )
+  useRealtime<{ id: string }>(
+    'map_point.removed',
+    useCallback(({ id }) => setPoints((list) => (list ?? []).filter((x) => x.id !== id)), [setPoints]),
+  )
 
   // Eigen locatie volgen en (als delen aan staat) doorsturen
   const sharing = me?.shareLocation ?? false
@@ -85,6 +152,8 @@ export function MapScreen() {
       (pos) => {
         setGeoError(false)
         setMyPosition(pos.coords)
+        // Ook bewaren, zodat je na het opnieuw openen zonder GPS-signaal je laatste plek ziet
+        saveOffline<LastPosition>('my-position', { latitude: pos.coords.latitude, longitude: pos.coords.longitude })
         if (!sharing) return
         const last = lastSent.current
         const moved = last ? distanceM({ latitude: last.lat, longitude: last.lng }, pos.coords) : Infinity
@@ -134,7 +203,7 @@ export function MapScreen() {
   return (
     <section className="map-screen" aria-label={t('map.title')}>
       {!stages.loading && (
-        <MapContainer center={center} zoom={17} className={`map ${dark && !CARTO_KEY ? 'map-dark' : ''}`} zoomControl={false} attributionControl>
+        <MapContainer center={center} zoom={17} className={`map ${dark && !CARTO_KEY ? 'map-dark' : ''} ${online ? '' : 'offline'}`} zoomControl={false} attributionControl>
           {CARTO_KEY ? (
             // 's Nachts de donkere CARTO-kaart, zodat het scherm niet verblindt
             <TileLayer
@@ -174,6 +243,23 @@ export function MapScreen() {
             )
           })}
 
+          {points.data?.map((point) => (
+            <Marker key={point.id} position={[point.latitude, point.longitude]} icon={pointIcon(point.kind)}>
+              <Tooltip direction="top">{point.name}</Tooltip>
+              <Popup>
+                <strong>{point.name}</strong>
+                <br />
+                <span className="muted">{t(`point.${point.kind}`)}</span>
+                {point.description && (
+                  <>
+                    <br />
+                    {point.description}
+                  </>
+                )}
+              </Popup>
+            </Marker>
+          ))}
+
           {pins.data?.map((pin) => (
             <Marker key={pin.id} position={[pin.latitude, pin.longitude]} icon={pinIcon}>
               <Popup>
@@ -195,15 +281,27 @@ export function MapScreen() {
               <Popup>
                 <strong>{f.displayName}</strong>
                 <br />
-                {t('map.updated', { time: formatRelative(f.recordedAt, locale) })}
+                {online
+                  ? t('map.updated', { time: formatRelative(f.recordedAt, locale) })
+                  : t('map.lastKnownAt', { time: `${formatTime(f.recordedAt, locale)}, ${formatRelative(f.recordedAt, locale)}` })}
               </Popup>
             </Marker>
           ))}
 
-          {myPosition && (
+          {myPosition ? (
             <Marker position={[myPosition.latitude, myPosition.longitude]} icon={meIcon}>
               <Tooltip>{t('map.you')}</Tooltip>
             </Marker>
+          ) : (
+            lastPosition && (
+              <Marker position={[lastPosition.data.latitude, lastPosition.data.longitude]} icon={meLastIcon}>
+                <Popup>
+                  <strong>{t('map.you')}</strong>
+                  <br />
+                  {t('map.lastKnownAt', { time: `${formatTime(lastPosition.savedAt, locale)}, ${formatRelative(lastPosition.savedAt, locale)}` })}
+                </Popup>
+              </Marker>
+            )
           )}
         </MapContainer>
       )}
@@ -218,6 +316,7 @@ export function MapScreen() {
           <span className="dot" aria-hidden="true" /> {sharing ? t('map.sharing') : t('map.notSharing')}
         </button>
         {geoError && sharing && <p className="map-note">{t('map.geoDenied')}</p>}
+        {!online && stages.savedAt && <p className="map-note">{t('map.offlineData', { time: formatTime(stages.savedAt, locale) })}</p>}
         {placing && !draft && <p className="map-note">{t('map.tapToPlace')}</p>}
       </div>
 
