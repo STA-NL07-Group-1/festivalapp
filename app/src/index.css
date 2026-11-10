@@ -20,8 +20,12 @@
   --stagelight: #ffc53d;
   --stagelight-text: #ffc53d;
   --gradient: linear-gradient(120deg, var(--neon), var(--violet) 52%, var(--laser));
+  /* Donkerder verloop voor vlakken met witte tekst: wit haalt overal minstens 4.5:1 */
+  --gradient-strong: linear-gradient(120deg, #c4127f, #8e2bd6 52%, #1f5ae0);
 
   --danger: #ff4d5e;
+  /* Rood voor vlakken met witte tekst (5.7:1) */
+  --danger-strong: #c8202f;
   --warning: #ffb020;
 
   --display: 'Big Shoulders Display Variable', 'Arial Narrow', sans-serif;
@@ -51,6 +55,9 @@
   --text: #f5f2ff;
   --muted: #a99fc8;
   --accent: #d36bff;
+  --neon-text: var(--neon);
+  /* Rand van invoervelden, minstens 3:1 tegen de achtergrond */
+  --field-border: #7a6fa6;
   --glow: rgb(164 60 240 / 0.28);
   --shadow: 0 12px 32px rgb(5 2 15 / 0.55);
   --glass: rgb(25 17 50 / 0.82);
@@ -66,6 +73,10 @@
   --text: #170f2e;
   --muted: #645a82;
   --accent: #8a22d6;
+  /* Roze en rood zijn op wit te licht voor tekst en iconen */
+  --neon-text: #c4127f;
+  --danger: #c8202f;
+  --field-border: #857c9f;
   --glow: rgb(164 60 240 / 0.14);
   --shadow: 0 12px 28px rgb(23 15 46 / 0.14);
   --glass: rgb(255 255 255 / 0.86);
@@ -164,7 +175,7 @@ textarea {
   font-size: 0.9rem;
 }
 .button.primary {
-  background: var(--gradient);
+  background: var(--gradient-strong);
   border: none;
   color: white;
   box-shadow: 0 6px 18px var(--glow);
@@ -175,7 +186,7 @@ textarea {
   color: var(--accent);
 }
 .button.danger {
-  background: var(--danger);
+  background: var(--danger-strong);
   border: none;
   color: white;
 }
@@ -214,7 +225,7 @@ textarea {
   cursor: pointer;
 }
 .icon-button.primary {
-  background: var(--gradient);
+  background: var(--gradient-strong);
   color: white;
 }
 .icon-button:disabled {
@@ -245,7 +256,7 @@ textarea {
   min-height: 48px;
   padding: 10px 14px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
+  border: 1px solid var(--field-border);
   background: var(--surface-2);
 }
 input:focus,
@@ -422,7 +433,7 @@ textarea {
 }
 .badge.geannuleerd,
 .badge.nood {
-  background: var(--danger);
+  background: var(--danger-strong);
   color: white;
 }
 .chips {
@@ -566,7 +577,7 @@ textarea {
   background: var(--surface-2);
 }
 .tabbar button[aria-current='page'] svg {
-  color: var(--neon);
+  color: var(--neon-text);
 }
 .tab-badge {
   position: absolute;
@@ -576,7 +587,7 @@ textarea {
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--danger);
+  background: var(--danger-strong);
   color: white;
   font-size: 0.7rem;
   line-height: 18px;
@@ -589,7 +600,7 @@ textarea {
 }
 
 .emergency-banner {
-  background: var(--danger);
+  background: var(--danger-strong);
   color: white;
   padding: calc(12px + var(--safe-top)) 16px 14px;
   display: grid;
@@ -611,7 +622,7 @@ textarea {
 }
 @keyframes alarm {
   50% {
-    background: #c8102e;
+    background: #a30d24;
   }
 }
 .offline-banner,
@@ -810,7 +821,7 @@ textarea {
   backdrop-filter: blur(12px);
 }
 .fab.secondary.active {
-  background: var(--gradient);
+  background: var(--gradient-strong);
   color: white;
   border-color: transparent;
 }
@@ -820,7 +831,7 @@ textarea {
   justify-content: center;
   border-radius: 50%;
   border: none;
-  background: radial-gradient(circle at 35% 30%, #ff7a86, var(--danger) 55%, #c8102e);
+  background: radial-gradient(circle at 35% 30%, #e23a5a, var(--danger-strong) 55%, #a30d24);
   color: white;
   font-family: var(--display);
   font-size: 1.5rem;
@@ -857,7 +868,7 @@ textarea {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--gradient);
+  background: var(--gradient-strong);
   color: white;
   font-weight: 800;
   font-size: 0.8rem;
@@ -1042,7 +1053,7 @@ textarea {
   text-transform: uppercase;
 }
 .day[aria-selected='true'] {
-  background: var(--gradient);
+  background: var(--gradient-strong);
   border-color: transparent;
   color: white;
 }
@@ -1144,7 +1155,7 @@ textarea {
   cursor: pointer;
 }
 .star.on {
-  color: var(--neon);
+  color: var(--neon-text);
 }
 .star:active {
   transform: scale(0.9);
@@ -1228,7 +1239,7 @@ textarea {
 }
 .bubble.mine {
   align-self: flex-end;
-  background: var(--gradient);
+  background: var(--gradient-strong);
   color: white;
   border-bottom-right-radius: 6px;
 }

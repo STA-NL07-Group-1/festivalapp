@@ -1,4 +1,4 @@
-// Maakt een account voor het beheerportal aan (of zet het wachtwoord opnieuw).
+// Maakt een account voor het beheerportal aan (of zet het wachtwoord opnieuw en logt alle sessies uit).
 //
 //   ADMIN_EMAIL=jij@school.nl ADMIN_NAME="Gijs" ADMIN_ROLE=beheerder ADMIN_PASSWORD='…' node scripts/create-admin.ts
 //
@@ -24,6 +24,8 @@ export async function createAdmin(databaseUrl: string, input: { email: string; n
        RETURNING id`,
       [email, hash, input.name.trim() || 'Organisatie', input.role],
     )
+    // Bij een nieuw wachtwoord moeten oude sessies ook stoppen, anders blijft wie al ingelogd was gewoon binnen
+    await client.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [rows[0]!.id])
     await client.query(`INSERT INTO audit_log (actor_id, action, target_type, target_id) VALUES (NULL, 'account.create_admin', 'user', $1)`, [
       rows[0]!.id,
     ])

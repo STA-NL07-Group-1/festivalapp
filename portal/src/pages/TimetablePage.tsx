@@ -12,14 +12,23 @@ export function TimetablePage() {
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [stageFilter, setStageFilter] = useState('')
+  // Gekozen status die nog niet is opgeslagen. Pas na "Opslaan" gaat er een wijziging en pushmelding uit,
+  // zodat een verkeerde klik of de pijltjestoetsen in de lijst niet meteen bezoekers bereiken.
+  const [pendingStatus, setPendingStatus] = useState<Record<string, Performance['status']>>({})
 
   const stageName = (id: string) => stages.data?.find((s) => s.id === id)?.name ?? '?'
   const replace = (p: Performance) =>
     performances.setData((list) => (list?.some((x) => x.id === p.id) ? list.map((x) => (x.id === p.id ? p : x)) : [...(list ?? []), p]))
 
   async function quickStatus(p: Performance, status: Performance['status']) {
+    if (status === 'geannuleerd' && !window.confirm(`${p.artist} annuleren? Bezoekers met dit optreden krijgen direct een pushmelding.`)) return
     try {
       replace(await api.patch<Performance>(`/admin/performances/${p.id}`, { status }))
+      setPendingStatus((all) => {
+        const rest = { ...all }
+        delete rest[p.id]
+        return rest
+      })
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Opslaan mislukt.')
     }
@@ -156,50 +165,68 @@ export function TimetablePage() {
         </form>
       )}
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Tijd</th>
-            <th>Artiest</th>
-            <th>Podium</th>
-            <th>Status</th>
-            <th aria-label="Acties" />
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((p) => (
-            <tr key={p.id} className={p.status}>
-              <td>
-                {formatDateTime(p.startsAt)} – {formatTime(p.endsAt)}
-              </td>
-              <td>
-                <strong>{p.artist}</strong>
-                {p.signupCapacity ? <span className="muted"> · max. {p.signupCapacity}</span> : null}
-              </td>
-              <td>{stageName(p.stageId)}</td>
-              <td>
-                <select value={p.status} onChange={(e) => void quickStatus(p, e.target.value as Performance['status'])} aria-label={`Status ${p.artist}`}>
-                  {STATUSES.map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-              </td>
-              <td>
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => {
-                    setAdding(false)
-                    setEditing(p)
-                  }}
-                >
-                  Wijzigen
-                </button>
-              </td>
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Tijd</th>
+              <th>Artiest</th>
+              <th>Podium</th>
+              <th>Status</th>
+              <th aria-label="Acties" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {sorted.map((p) => (
+              <tr key={p.id} className={p.status}>
+                <td>
+                  {formatDateTime(p.startsAt)} – {formatTime(p.endsAt)}
+                </td>
+                <td>
+                  <strong>{p.artist}</strong>
+                  {p.signupCapacity ? <span className="muted"> · max. {p.signupCapacity}</span> : null}
+                </td>
+                <td>{stageName(p.stageId)}</td>
+                <td>
+                  <div className="status-edit">
+                    <select
+                      value={pendingStatus[p.id] ?? p.status}
+                      onChange={(e) => setPendingStatus((all) => ({ ...all, [p.id]: e.target.value as Performance['status'] }))}
+                      aria-label={`Status ${p.artist}`}
+                    >
+                      {STATUSES.map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </select>
+                    {pendingStatus[p.id] && pendingStatus[p.id] !== p.status && (
+                      <button
+                        type="button"
+                        className="button primary small"
+                        onClick={() => void quickStatus(p, pendingStatus[p.id] ?? p.status)}
+                        aria-label={`Status ${p.artist} opslaan`}
+                      >
+                        Opslaan
+                      </button>
+                    )}
+                  </div>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => {
+                      setAdding(false)
+                      setEditing(p)
+                    }}
+                  >
+                    Wijzigen
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   )
 }

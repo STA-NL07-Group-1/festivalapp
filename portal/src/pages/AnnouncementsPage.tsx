@@ -106,6 +106,7 @@ export function AnnouncementsPage() {
               </li>
             ))}
           </ul>
+          {list.data?.length === 0 && <p className="empty">Nog geen mededelingen.</p>}
         </div>
       </div>
     </section>

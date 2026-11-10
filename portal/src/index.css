@@ -4,16 +4,21 @@
   --purple: #a43cf0;
   --blue: #2a6dff;
   --gradient: linear-gradient(135deg, var(--pink), var(--purple) 55%, var(--blue));
+  /* Donkerder verloop voor vlakken met witte tekst (minstens 4.5:1) */
+  --gradient-strong: linear-gradient(135deg, #c4127f, #8e2bd6 55%, #1f5ae0);
   --bg: #f7f5fc;
   --surface: #fff;
   --surface-2: #efeaf9;
   --border: #ded6ef;
+  /* Rand van invoervelden, minstens 3:1 tegen wit */
+  --field-border: #857c9f;
   --text: #1a1233;
   --muted: #6b6188;
   --accent: #8a2be2;
-  --danger: #dc2626;
-  --warning: #d97706;
-  --success: #16a34a;
+  /* Alle drie minstens 4.5:1 op wit, als tekst én als achtergrond voor witte tekst */
+  --danger: #c8202f;
+  --warning: #b45309;
+  --success: #15803d;
   --radius: 14px;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.45;
@@ -86,7 +91,7 @@ textarea {
   cursor: pointer;
 }
 .button.primary {
-  background: var(--gradient);
+  background: var(--gradient-strong);
   border: none;
   color: white;
 }
@@ -113,7 +118,7 @@ textarea {
   width: 100%;
   min-height: 40px;
   padding: 8px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 10px;
   background: var(--surface);
 }
@@ -175,7 +180,7 @@ label {
   cursor: pointer;
 }
 .sidebar nav button[aria-current='page'] {
-  background: var(--gradient);
+  background: var(--gradient-strong);
 }
 .sidebar nav button.alert:not([aria-current='page']) {
   background: var(--danger);
@@ -219,6 +224,36 @@ label {
   .two-columns {
     grid-template-columns: 1fr;
   }
+  /* Op een smal scherm wordt het menu een balk bovenaan in plaats van een halve pagina */
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .sidebar nav {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    overflow-x: auto;
+  }
+  .who {
+    margin-top: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .main {
+    padding: 20px 16px;
+  }
+}
+/* Brede tabellen scrollen zelf opzij, niet de hele pagina */
+.table-scroll {
+  overflow-x: auto;
 }
 
 /* kaarten */
@@ -347,6 +382,16 @@ label {
   min-height: 32px;
   padding: 4px 8px;
 }
+.status-edit {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.button.small {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
 .table tr.geannuleerd strong {
   text-decoration: line-through;
   color: var(--muted);
@@ -366,10 +411,10 @@ label {
   color: var(--success);
 }
 .crowd.gemiddeld .big {
-  color: #ca8a04;
+  color: #a16207;
 }
 .crowd.druk .big {
-  color: #ea580c;
+  color: #c2410c;
 }
 .crowd.vol .big {
   color: var(--danger);

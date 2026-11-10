@@ -275,7 +275,7 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
                 type="button"
                 className={`star ${mineIds.has(p.id) ? 'on' : ''}`}
                 aria-pressed={mineIds.has(p.id)}
-                aria-label={mineIds.has(p.id) ? t('timetable.remove') : t('timetable.add')}
+                aria-label={t(mineIds.has(p.id) ? 'timetable.remove' : 'timetable.add', { artist: p.artist })}
                 onClick={() => void toggleMine(p)}
               >
                 <StarIcon filled={mineIds.has(p.id)} />
