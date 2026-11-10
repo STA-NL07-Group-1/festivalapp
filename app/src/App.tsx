@@ -122,7 +122,6 @@ function Shell() {
 
   return (
     <div className="shell">
-      <UpdatePrompt />
       {!online && (
         <div className="offline-banner" role="status">
           {t('common.offline')}
@@ -198,6 +197,8 @@ function Gate() {
 export default function App() {
   return (
     <SessionProvider>
+      {/* Service worker al op het inlogscherm aanmelden, zodat de app ook vóór het inloggen offline opent */}
+      <UpdatePrompt />
       <Gate />
     </SessionProvider>
   )
