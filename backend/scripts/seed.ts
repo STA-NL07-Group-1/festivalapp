@@ -70,6 +70,20 @@ export async function seed(databaseUrl: string, log = console.log, { programOnly
       return
     }
 
+    // Een paar kaartpunten rond het hoofdpodium (alleen demo; in productie zet de organisatie ze zelf)
+    const base = STAGES[0]!
+    const points: [string, string, number, number][] = [
+      ['wifi', 'Wifi bij de ingang', 0.0006, -0.0009],
+      ['wifi', 'Wifi bij het eetplein', -0.0007, 0.0008],
+      ['ehbo', 'EHBO-post', -0.0004, -0.0006],
+      ['water', 'Gratis water', 0.0003, 0.0007],
+      ['ingang', 'Hoofdingang', 0.0009, -0.0012],
+      ['oplaadpunt', 'Oplaadpunt bandjes', 0.0005, 0.0003],
+    ]
+    for (const [kind, name, dLat, dLng] of points) {
+      await client.query('INSERT INTO map_points (kind, name, latitude, longitude) VALUES ($1, $2, $3, $4)', [kind, name, base.lat + dLat, base.lng + dLng])
+    }
+
     // Tickets DEMO-0001 … DEMO-0050
     for (let i = 1; i <= 50; i++) {
       await client.query(

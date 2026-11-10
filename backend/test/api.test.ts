@@ -388,6 +388,50 @@ describe.skipIf(!databaseUrl)('backend', () => {
     })
   })
 
+  describe('kaartpunten', () => {
+    it('organisatie zet een punt op de kaart en bezoekers zien het', async () => {
+      const org = await login('organisatie@festival.test')
+      const visitor = await login('anna@festival.test')
+      const created = await api('POST', '/admin/map-points', {
+        token: org.accessToken,
+        body: { kind: 'wifi', name: 'Wifi bij de ingang', latitude: 52.373, longitude: 4.892 },
+      })
+      expect(created.status).toBe(201)
+      expect(created.body).toMatchObject({ kind: 'wifi', name: 'Wifi bij de ingang', description: null })
+
+      const list = await api('GET', '/map-points', { token: visitor.accessToken })
+      expect(list.status).toBe(200)
+      expect(list.body.map((p: { id: string }) => p.id)).toContain(created.body.id)
+
+      const updated = await api('PATCH', `/admin/map-points/${created.body.id}`, {
+        token: org.accessToken,
+        body: { description: 'Netwerk "Festival"' },
+      })
+      expect(updated.status).toBe(200)
+      expect(updated.body.description).toBe('Netwerk "Festival"')
+
+      expect((await api('DELETE', `/admin/map-points/${created.body.id}`, { token: org.accessToken })).status).toBe(204)
+      expect((await api('DELETE', `/admin/map-points/${created.body.id}`, { token: org.accessToken })).status).toBe(404)
+    })
+
+    it('bezoekers kunnen geen kaartpunten aanpassen', async () => {
+      const visitor = await login('anna@festival.test')
+      const res = await api('POST', '/admin/map-points', {
+        token: visitor.accessToken,
+        body: { kind: 'ehbo', name: 'Nep', latitude: 52.37, longitude: 4.89 },
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('weigert een onbekende soort of een punt buiten de wereld', async () => {
+      const org = await login('organisatie@festival.test')
+      const kind = await api('POST', '/admin/map-points', { token: org.accessToken, body: { kind: 'kroeg', name: 'Bar', latitude: 52.37, longitude: 4.89 } })
+      expect(kind.status).toBe(400)
+      const lat = await api('POST', '/admin/map-points', { token: org.accessToken, body: { kind: 'ehbo', name: 'EHBO', latitude: 95, longitude: 4.89 } })
+      expect(lat.status).toBe(400)
+    })
+  })
+
   describe('drukte en chatbot', () => {
     it('IoT-meting met sleutel, zonder sleutel 401', async () => {
       const visitor = await login('anna@festival.test')

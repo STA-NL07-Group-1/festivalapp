@@ -11,6 +11,38 @@ cleanupOutdatedCaches()
 // Alle pagina's van de app → index.html (ook offline). Niet voor de API en het beheerportal.
 registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/api\//, /^\/beheer(\/|$)/] }))
 
+// Kaarttegels bewaren die je al eens hebt bekeken, zodat de kaart van het terrein ook
+// zonder internet zichtbaar blijft. We halen niets vooruit op: de kaartdiensten staan
+// bulk-downloaden niet toe. Eerst uit de cache, anders van internet (en dan bewaren).
+const TILE_CACHE = 'kaarttegels-v1'
+const TILE_HOSTS = ['basemaps.cartocdn.com', 'tile.openstreetmap.org']
+const MAX_TILES = 3000
+
+const isTile = (url: URL) => TILE_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))
+
+async function trimTileCache(cache: Cache): Promise<void> {
+  const keys = await cache.keys()
+  // Oudste eerst weg (de cache onthoudt de volgorde waarin tegels zijn toegevoegd)
+  for (const key of keys.slice(0, Math.max(0, keys.length - MAX_TILES))) await cache.delete(key)
+}
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET' || !isTile(new URL(event.request.url))) return
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(TILE_CACHE)
+      const cached = await cache.match(event.request)
+      if (cached) return cached
+      const response = await fetch(event.request)
+      // Tegels van een ander domein komen als "opaque" response (status 0); die mogen ook in de cache
+      if (response.ok || response.type === 'opaque') {
+        event.waitUntil(cache.put(event.request, response.clone()).then(() => trimTileCache(cache)))
+      }
+      return response
+    })(),
+  )
+})
+
 self.addEventListener('message', (event) => {
   if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') void self.skipWaiting()
 })

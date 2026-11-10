@@ -100,6 +100,14 @@ SELECT pg_temp.expect_fail('SOS met alleen breedtegraad',
 SELECT pg_temp.expect_fail('SOS afgehandeld zonder tijdstip',
     $q$INSERT INTO sos_alerts (user_id, status) VALUES ('00000000-0000-0000-0000-000000000001', 'afgehandeld')$q$);
 
+-- --- map_points --------------------------------------------------------------
+SELECT pg_temp.expect_fail('kaartpunt zonder naam',
+    $q$INSERT INTO map_points (kind, name, latitude, longitude) VALUES ('wifi', '', 52.3, 4.8)$q$);
+SELECT pg_temp.expect_fail('kaartpunt met onbekende soort',
+    $q$INSERT INTO map_points (kind, name, latitude, longitude) VALUES ('kroeg', 'Bar', 52.3, 4.8)$q$);
+SELECT pg_temp.expect_fail('kaartpunt buiten de wereld',
+    $q$INSERT INTO map_points (kind, name, latitude, longitude) VALUES ('ehbo', 'EHBO', 95, 4.8)$q$);
+
 -- --- audit_log ---------------------------------------------------------------
 INSERT INTO audit_log (actor_id, action) VALUES ('00000000-0000-0000-0000-000000000001', 'auth.login');
 SELECT pg_temp.expect_fail('audit_log wijzigen',

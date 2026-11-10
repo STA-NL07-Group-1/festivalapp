@@ -54,6 +54,17 @@ export const toStage = (r: Row) => ({
   sortOrder: r.sort_order,
 })
 
+export const MAP_POINT_COLUMNS = 'id, kind, name, description, latitude, longitude'
+
+export const toMapPoint = (r: Row) => ({
+  id: r.id,
+  kind: r.kind,
+  name: r.name,
+  description: r.description ?? null,
+  latitude: r.latitude,
+  longitude: r.longitude,
+})
+
 export const toPerformance = (r: Row) => ({
   id: r.id,
   stageId: r.stage_id,

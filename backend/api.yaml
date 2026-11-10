@@ -543,6 +543,30 @@ paths:
                   sortOrder: 1
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /map-points:
+    get:
+      tags: [map]
+      operationId: listMapPoints
+      summary: Kaartpunten van de organisatie (wifi, EHBO, water, ingang …)
+      description: De app bewaart deze lijst op de telefoon, zodat de punten ook zonder internet zichtbaar blijven.
+      responses:
+        '200':
+          description: Kaartpunten
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 500
+                items: { $ref: '#/components/schemas/MapPoint' }
+              example:
+                - id: 7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                  kind: wifi
+                  name: Wifi bij de ingang
+                  description: Gratis wifi, netwerk "Festival"
+                  latitude: 52.3731
+                  longitude: 4.8921
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /performances:
     get:
       tags: [timetable]
@@ -850,6 +874,61 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /admin/map-points:
+    post:
+      tags: [admin]
+      operationId: createMapPoint
+      summary: Zet een punt op de kaart
+      x-roles: [organisatie, beheerder]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMapPoint' }
+      responses:
+        '201':
+          description: Toegevoegd
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MapPoint' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/map-points/{mapPointId}:
+    parameters:
+      - $ref: '#/components/parameters/MapPointId'
+    patch:
+      tags: [admin]
+      operationId: updateMapPoint
+      summary: Wijzig een kaartpunt
+      x-roles: [organisatie, beheerder]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMapPoint' }
+      responses:
+        '200':
+          description: Gewijzigd
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MapPoint' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [admin]
+      operationId: deleteMapPoint
+      summary: Verwijder een kaartpunt
+      x-roles: [organisatie, beheerder]
+      responses:
+        '204': { description: Verwijderd }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /admin/performances:
     post:
       tags: [admin]
@@ -1049,6 +1128,11 @@ components:
       schema: { type: string, format: uuid }
     PerformanceId:
       name: performanceId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MapPointId:
+      name: mapPointId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1279,6 +1363,39 @@ components:
         longitude: { type: number }
         capacity: { type: integer }
         sortOrder: { type: integer }
+    MapPointKind: { type: string, enum: [wifi, ehbo, water, toilet, ingang, uitgang, eten, activiteit, oplaadpunt, info] }
+    MapPoint:
+      type: object
+      x-table: map_points
+      additionalProperties: false
+      required: [id, kind, name, description, latitude, longitude]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/MapPointKind' }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        latitude: { type: number }
+        longitude: { type: number }
+    CreateMapPoint:
+      type: object
+      additionalProperties: false
+      required: [kind, name, latitude, longitude]
+      properties:
+        kind: { $ref: '#/components/schemas/MapPointKind' }
+        name: { type: string, minLength: 1, maxLength: 60 }
+        description: { type: string, maxLength: 200 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+    UpdateMapPoint:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        kind: { $ref: '#/components/schemas/MapPointKind' }
+        name: { type: string, minLength: 1, maxLength: 60 }
+        description: { type: [string, 'null'], maxLength: 200 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
     PerformanceStatus: { type: string, enum: [gepland, vertraagd, verplaatst, geannuleerd] }
     Performance:
       type: object

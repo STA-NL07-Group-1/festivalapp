@@ -308,6 +308,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/map-points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kaartpunten van de organisatie (wifi, EHBO, water, ingang …)
+         * @description De app bewaart deze lijst op de telefoon, zodat de punten ook zonder internet zichtbaar blijven.
+         */
+        get: operations["listMapPoints"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/performances": {
         parameters: {
             query?: never;
@@ -526,6 +546,43 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/admin/map-points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Zet een punt op de kaart */
+        post: operations["createMapPoint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/map-points/{mapPointId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mapPointId: components["parameters"]["MapPointId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Verwijder een kaartpunt */
+        delete: operations["deleteMapPoint"];
+        options?: never;
+        head?: never;
+        /** Wijzig een kaartpunt */
+        patch: operations["updateMapPoint"];
         trace?: never;
     };
     "/admin/performances": {
@@ -779,6 +836,31 @@ export interface components {
             sortOrder: number;
         };
         /** @enum {string} */
+        MapPointKind: "wifi" | "ehbo" | "water" | "toilet" | "ingang" | "uitgang" | "eten" | "activiteit" | "oplaadpunt" | "info";
+        MapPoint: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["MapPointKind"];
+            name: string;
+            description: string | null;
+            latitude: number;
+            longitude: number;
+        };
+        CreateMapPoint: {
+            kind: components["schemas"]["MapPointKind"];
+            name: string;
+            description?: string;
+            latitude: number;
+            longitude: number;
+        };
+        UpdateMapPoint: {
+            kind?: components["schemas"]["MapPointKind"];
+            name?: string;
+            description?: string | null;
+            latitude?: number;
+            longitude?: number;
+        };
+        /** @enum {string} */
         PerformanceStatus: "gepland" | "vertraagd" | "verplaatst" | "geannuleerd";
         Performance: {
             /** Format: uuid */
@@ -1002,6 +1084,7 @@ export interface components {
     parameters: {
         UserId: string;
         PerformanceId: string;
+        MapPointId: string;
     };
     requestBodies: never;
     headers: never;
@@ -1711,6 +1794,39 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    listMapPoints: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Kaartpunten */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example [
+                     *       {
+                     *         "id": "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+                     *         "kind": "wifi",
+                     *         "name": "Wifi bij de ingang",
+                     *         "description": "Gratis wifi, netwerk \"Festival\"",
+                     *         "latitude": 52.3731,
+                     *         "longitude": 4.8921
+                     *       }
+                     *     ]
+                     */
+                    "application/json": components["schemas"]["MapPoint"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     listPerformances: {
         parameters: {
             query?: {
@@ -2159,6 +2275,86 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    createMapPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMapPoint"];
+            };
+        };
+        responses: {
+            /** @description Toegevoegd */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MapPoint"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    deleteMapPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mapPointId: components["parameters"]["MapPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verwijderd */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateMapPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mapPointId: components["parameters"]["MapPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMapPoint"];
+            };
+        };
+        responses: {
+            /** @description Gewijzigd */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MapPoint"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     createPerformance: {
