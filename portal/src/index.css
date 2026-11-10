@@ -453,3 +453,68 @@ label {
 .login h1 {
   text-align: center;
 }
+
+/* kaart om een positie te kiezen */
+.picker-map {
+  height: 320px;
+  border-radius: var(--radius);
+  border: 1px solid var(--field-border);
+  margin: 6px 0;
+  cursor: crosshair;
+}
+.picker-chosen span {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.45);
+  cursor: grab;
+}
+.picker-existing span {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid #170f2e;
+}
+.field-label {
+  font-weight: 600;
+  margin: 0;
+}
+.small {
+  font-size: 0.85rem;
+}
+details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+}
+.search-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.search-bar input {
+  flex: 1;
+  min-width: 200px;
+}
+.badge.vip {
+  background: #6d28d9;
+  color: #ffffff;
+}
+.badge.plain {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

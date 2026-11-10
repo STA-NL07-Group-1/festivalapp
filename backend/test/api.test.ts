@@ -388,6 +388,44 @@ describe.skipIf(!databaseUrl)('backend', () => {
     })
   })
 
+  describe('gebruikers beheren', () => {
+    it('beheerder zoekt een bezoeker en maakt het ticket VIP', async () => {
+      const admin = await login('beheerder@festival.test')
+      const visitor = await register('Vipje')
+      const found = await api('GET', '/admin/users?q=vipje', { token: admin.accessToken })
+      expect(found.status).toBe(200)
+      expect(found.body.map((u: { id: string }) => u.id)).toEqual([visitor.id])
+      const updated = await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { ticketType: 'vip' } })
+      expect(updated.status).toBe(200)
+      expect(updated.body).toMatchObject({ ticketType: 'vip', blocked: false })
+    })
+
+    it('blokkeren logt uit en houdt inloggen tegen; deblokkeren maakt het weer mogelijk', async () => {
+      const admin = await login('beheerder@festival.test')
+      const visitor = await register('Lastpak')
+      const noReason = await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: true } })
+      expect(noReason.status).toBe(400)
+      const blocked = await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: true, blockedReason: 'Incident op het terrein' } })
+      expect(blocked.body).toMatchObject({ blocked: true, blockedReason: 'Incident op het terrein' })
+
+      expect((await api('POST', '/auth/refresh', { body: { refreshToken: visitor.refreshToken } })).status).toBe(401)
+      const again = await api('POST', '/auth/login', { body: { email: 'lastpak@test.nl', password: 'een-heel-sterk-wachtwoord' } })
+      expect(again.status).toBe(403)
+
+      await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: false } })
+      await login('lastpak@test.nl', 'een-heel-sterk-wachtwoord')
+    })
+
+    it('alleen een beheerder, en alleen bezoekers', async () => {
+      const org = await login('organisatie@festival.test')
+      expect((await api('GET', '/admin/users', { token: org.accessToken })).status).toBe(403)
+      const admin = await login('beheerder@festival.test')
+      const staff = await api('GET', '/admin/users?q=organisatie@', { token: admin.accessToken })
+      const res = await api('PATCH', `/admin/users/${staff.body[0].id}`, { token: admin.accessToken, body: { blocked: true, blockedReason: 'Test' } })
+      expect(res.status).toBe(403)
+    })
+  })
+
   describe('kaartpunten', () => {
     it('organisatie zet een punt op de kaart en bezoekers zien het', async () => {
       const org = await login('organisatie@festival.test')

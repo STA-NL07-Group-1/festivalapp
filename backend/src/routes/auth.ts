@@ -12,6 +12,7 @@ interface UserRow {
   password_hash: string
   failed_logins: number
   locked_until: Date | null
+  blocked_at: Date | null
 }
 
 export function authRoutes(r: Router, deps: Deps): void {
@@ -66,7 +67,7 @@ export function authRoutes(r: Router, deps: Deps): void {
   r.post('/auth/login', { operationId: 'login', auth: 'none', rateLimit: strict }, async (ctx) => {
     const { email, password } = ctx.body as { email: string; password: string }
     const { rows } = await db.query<UserRow>(
-      'SELECT id, role, password_hash, failed_logins, locked_until FROM users WHERE email = $1',
+      'SELECT id, role, password_hash, failed_logins, locked_until, blocked_at FROM users WHERE email = $1',
       [email.trim().toLowerCase()],
     )
     const user = rows[0]
@@ -89,6 +90,12 @@ export function authRoutes(r: Router, deps: Deps): void {
       await audit(db, user.id, 'auth.login_failed', undefined, { ip: ctx.ip })
       throw fail()
     }
+    // Pas na een goed wachtwoord melden dat het account geblokkeerd is: zo verraadt de melding
+    // niet aan een vreemde dat dit e-mailadres een (geblokkeerd) account heeft
+    if (user.blocked_at) {
+      await audit(db, user.id, 'auth.login_blocked')
+      throw new HttpError(403, 'forbidden', 'Dit account is geblokkeerd. Neem contact op met de organisatie.')
+    }
     await db.query('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = $1', [user.id])
     await audit(db, user.id, 'auth.login')
     return { status: 200, body: await issueTokens(user, ctx.req.headers['user-agent']) }
@@ -96,8 +103,8 @@ export function authRoutes(r: Router, deps: Deps): void {
 
   r.post('/auth/refresh', { operationId: 'refreshTokens', auth: 'none', rateLimit: { limit: 30, windowMs: 60_000 } }, async (ctx) => {
     const { refreshToken } = ctx.body as { refreshToken: string }
-    const { rows } = await db.query<{ id: string; user_id: string; role: UserRow['role']; revoked_at: Date | null; expires_at: Date }>(
-      `SELECT s.id, s.user_id, u.role, s.revoked_at, s.expires_at
+    const { rows } = await db.query<{ id: string; user_id: string; role: UserRow['role']; revoked_at: Date | null; expires_at: Date; blocked_at: Date | null }>(
+      `SELECT s.id, s.user_id, u.role, s.revoked_at, s.expires_at, u.blocked_at
          FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.refresh_token_hash = $1`,
       [sha256(refreshToken)],
@@ -110,7 +117,7 @@ export function authRoutes(r: Router, deps: Deps): void {
       await audit(db, session.user_id, 'auth.refresh_reuse')
       throw unauthorized()
     }
-    if (session.expires_at <= new Date()) throw unauthorized()
+    if (session.expires_at <= new Date() || session.blocked_at) throw unauthorized()
     await db.query('UPDATE sessions SET revoked_at = now() WHERE id = $1', [session.id])
     return { status: 200, body: await issueTokens({ id: session.user_id, role: session.role }, ctx.req.headers['user-agent']) }
   })

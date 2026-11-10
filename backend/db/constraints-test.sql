@@ -100,6 +100,12 @@ SELECT pg_temp.expect_fail('SOS met alleen breedtegraad',
 SELECT pg_temp.expect_fail('SOS afgehandeld zonder tijdstip',
     $q$INSERT INTO sos_alerts (user_id, status) VALUES ('00000000-0000-0000-0000-000000000001', 'afgehandeld')$q$);
 
+-- --- users: blokkeren ---------------------------------------------------------
+SELECT pg_temp.expect_fail('geblokkeerd zonder reden',
+    $q$UPDATE users SET blocked_at = now() WHERE id = '00000000-0000-0000-0000-000000000001'$q$);
+SELECT pg_temp.expect_fail('reden zonder blokkade',
+    $q$UPDATE users SET blocked_reason = 'Incident' WHERE id = '00000000-0000-0000-0000-000000000001'$q$);
+
 -- --- map_points --------------------------------------------------------------
 SELECT pg_temp.expect_fail('kaartpunt zonder naam',
     $q$INSERT INTO map_points (kind, name, latitude, longitude) VALUES ('wifi', '', 52.3, 4.8)$q$);
