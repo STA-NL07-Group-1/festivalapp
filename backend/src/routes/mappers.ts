@@ -30,12 +30,13 @@ export const toAdminUser = (r: Row) => ({
   createdAt: iso(r.created_at),
 })
 
-export const toFestival = (f: { id: string; name: string; startsAt: Date; endsAt: Date; role: string }) => ({
+export const toFestival = (f: { id: string; name: string; startsAt: Date; endsAt: Date; role: string; ticketType?: string | null }) => ({
   id: f.id,
   name: f.name,
   startsAt: f.startsAt.toISOString(),
   endsAt: f.endsAt.toISOString(),
   role: f.role,
+  ticketType: f.ticketType ?? null,
   active: f.startsAt.getTime() <= Date.now() && f.endsAt.getTime() > Date.now(),
 })
 
@@ -146,3 +147,25 @@ export const toSos = (r: Row) => ({
 })
 
 export const PERFORMANCE_COLUMNS = 'id, stage_id, artist, description, starts_at, ends_at, status, signup_capacity'
+
+export const toFaqItem = (r: Row) => ({
+  id: r.id,
+  questionNl: r.question_nl,
+  questionEn: r.question_en,
+  answerNl: r.answer_nl,
+  answerEn: r.answer_en,
+  sortOrder: r.sort_order,
+})
+
+export const FAQ_COLUMNS = 'id, question_nl, question_en, answer_nl, answer_en, sort_order'
+
+export const toLostItem = (r: Row) => ({
+  id: r.id,
+  description: r.description,
+  foundWhere: r.found_where ?? null,
+  foundAt: iso(r.found_at),
+  status: r.status,
+  collectedAt: iso(r.collected_at),
+})
+
+export const LOST_ITEM_COLUMNS = 'id, description, found_where, found_at, status, collected_at'

@@ -1353,6 +1353,240 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  # ---------------------------------------------------------------- festivalinformatie
+  /festival-info:
+    get:
+      tags: [festivals]
+      operationId: getFestivalInfo
+      summary: Huisregels, veelgestelde vragen en of er een plattegrond is
+      responses:
+        '200':
+          description: Informatie van dit festival
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FestivalInfo' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /site-map:
+    get:
+      tags: [festivals]
+      operationId: getSiteMap
+      summary: De plattegrond van dit festival (afbeelding)
+      responses:
+        '200':
+          description: png, jpeg of webp
+          content:
+            image/png: { schema: { type: string, contentMediaType: image/png } }
+            image/jpeg: { schema: { type: string, contentMediaType: image/jpeg } }
+            image/webp: { schema: { type: string, contentMediaType: image/webp } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /lost-items:
+    get:
+      tags: [festivals]
+      operationId: listLostItems
+      summary: Gevonden voorwerpen die nog niet zijn opgehaald (laatste 30 dagen)
+      responses:
+        '200':
+          description: Nieuwste eerst
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 200
+                items: { $ref: '#/components/schemas/LostItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/house-rules:
+    put:
+      tags: [admin]
+      operationId: updateHouseRules
+      summary: Huisregels van dit festival opslaan
+      x-roles: [beheerder, organisatie]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateHouseRules' }
+      responses:
+        '204': { description: Opgeslagen }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/faq:
+    post:
+      tags: [admin]
+      operationId: createFaqItem
+      summary: Vraag toevoegen aan de veelgestelde vragen
+      x-roles: [beheerder, organisatie]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFaqItem' }
+      responses:
+        '201':
+          description: Toegevoegd
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FaqItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/faq/{faqId}:
+    parameters:
+      - $ref: '#/components/parameters/FaqId'
+    patch:
+      tags: [admin]
+      operationId: updateFaqItem
+      summary: Vraag wijzigen
+      x-roles: [beheerder, organisatie]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateFaqItem' }
+      responses:
+        '200':
+          description: Gewijzigd
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FaqItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [admin]
+      operationId: deleteFaqItem
+      summary: Vraag verwijderen
+      x-roles: [beheerder, organisatie]
+      responses:
+        '204': { description: Verwijderd }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/site-map:
+    put:
+      tags: [admin]
+      operationId: uploadSiteMap
+      summary: Plattegrond uploaden (vervangt de vorige)
+      description: Het type wordt aan de inhoud herkend, niet aan de bestandsnaam. Geen svg.
+      x-roles: [beheerder, organisatie]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UploadSiteMap' }
+      responses:
+        '200':
+          description: Opgeslagen
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [siteMapUpdatedAt]
+                properties:
+                  siteMapUpdatedAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413':
+          description: Bestand te groot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      tags: [admin]
+      operationId: deleteSiteMap
+      summary: Plattegrond weghalen
+      x-roles: [beheerder, organisatie]
+      responses:
+        '204': { description: Verwijderd }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/lost-items:
+    get:
+      tags: [admin]
+      operationId: listAllLostItems
+      summary: Alle gevonden voorwerpen van dit festival, ook opgehaalde
+      x-roles: [beheerder, organisatie, ehbo, beveiliging]
+      responses:
+        '200':
+          description: Eerst wat nog niet is opgehaald
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 500
+                items: { $ref: '#/components/schemas/LostItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [admin]
+      operationId: createLostItem
+      summary: Gevonden voorwerp registreren
+      description: Alleen een korte omschrijving, geen namen of andere persoonsgegevens van de eigenaar.
+      x-roles: [beheerder, organisatie, ehbo, beveiliging]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLostItem' }
+      responses:
+        '201':
+          description: Geregistreerd
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LostItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/lost-items/{lostItemId}:
+    parameters:
+      - $ref: '#/components/parameters/LostItemId'
+    patch:
+      tags: [admin]
+      operationId: updateLostItem
+      summary: Markeren als opgehaald (of terugzetten)
+      x-roles: [beheerder, organisatie, ehbo, beveiliging]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateLostItem' }
+      responses:
+        '200':
+          description: Gewijzigd
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LostItem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [admin]
+      operationId: deleteLostItem
+      summary: Gevonden voorwerp verwijderen
+      x-roles: [beheerder, organisatie]
+      responses:
+        '204': { description: Verwijderd }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # ---------------------------------------------------------------- iot
   /iot/crowd-readings:
     post:
@@ -1398,6 +1632,16 @@ components:
       schema: { type: string, format: uuid }
     MapPointId:
       name: mapPointId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    FaqId:
+      name: faqId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    LostItemId:
+      name: lostItemId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1674,7 +1918,7 @@ components:
       x-table: festivals
       x-computed: [role, active]
       additionalProperties: false
-      required: [id, name, startsAt, endsAt, role, active]
+      required: [id, name, startsAt, endsAt, role, active, ticketType]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -1682,6 +1926,9 @@ components:
         endsAt: { type: string, format: date-time }
         role: { $ref: '#/components/schemas/Role' }
         active: { type: boolean, description: Het festival is nu bezig }
+        ticketType:
+          type: [string, 'null']
+          description: Soort ticket (weekend, dag, vip); null als je geen ticket hebt, bijv. als personeel
     CreateFestival:
       type: object
       additionalProperties: false
@@ -1748,6 +1995,100 @@ components:
       required: [email]
       properties:
         email: { type: string, format: email, maxLength: 254 }
+    FaqItem:
+      type: object
+      x-table: faq_items
+      additionalProperties: false
+      required: [id, questionNl, questionEn, answerNl, answerEn, sortOrder]
+      properties:
+        id: { type: string, format: uuid }
+        questionNl: { type: string }
+        questionEn: { type: string }
+        answerNl: { type: string }
+        answerEn: { type: string }
+        sortOrder: { type: integer }
+    CreateFaqItem:
+      type: object
+      additionalProperties: false
+      required: [questionNl, questionEn, answerNl, answerEn]
+      properties:
+        questionNl: { type: string, minLength: 1, maxLength: 200 }
+        questionEn: { type: string, minLength: 1, maxLength: 200 }
+        answerNl: { type: string, minLength: 1, maxLength: 2000 }
+        answerEn: { type: string, minLength: 1, maxLength: 2000 }
+        sortOrder: { type: integer, minimum: 0, maximum: 1000 }
+    UpdateFaqItem:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        questionNl: { type: string, minLength: 1, maxLength: 200 }
+        questionEn: { type: string, minLength: 1, maxLength: 200 }
+        answerNl: { type: string, minLength: 1, maxLength: 2000 }
+        answerEn: { type: string, minLength: 1, maxLength: 2000 }
+        sortOrder: { type: integer, minimum: 0, maximum: 1000 }
+    FestivalInfo:
+      type: object
+      x-table: festivals
+      x-computed: [siteMapUpdatedAt, faq]
+      additionalProperties: false
+      required: [houseRulesNl, houseRulesEn, siteMapUpdatedAt, faq]
+      properties:
+        houseRulesNl: { type: [string, 'null'] }
+        houseRulesEn: { type: [string, 'null'] }
+        siteMapUpdatedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Wanneer de plattegrond is geüpload; null als er geen is
+        faq:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/FaqItem' }
+    UpdateHouseRules:
+      type: object
+      additionalProperties: false
+      required: [houseRulesNl, houseRulesEn]
+      properties:
+        houseRulesNl: { type: string, maxLength: 5000, description: Leeg = geen huisregels }
+        houseRulesEn: { type: string, maxLength: 5000 }
+    UploadSiteMap:
+      type: object
+      additionalProperties: false
+      required: [image]
+      properties:
+        image:
+          type: string
+          contentEncoding: base64
+          minLength: 4
+          maxLength: 4500000
+          pattern: '^[A-Za-z0-9+/]+={0,2}$'
+          description: png, jpeg of webp als base64, maximaal 3 MB
+    LostItemStatus: { type: string, enum: [gevonden, opgehaald] }
+    LostItem:
+      type: object
+      x-table: lost_items
+      additionalProperties: false
+      required: [id, description, foundWhere, foundAt, status, collectedAt]
+      properties:
+        id: { type: string, format: uuid }
+        description: { type: string }
+        foundWhere: { type: [string, 'null'] }
+        foundAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/LostItemStatus' }
+        collectedAt: { type: [string, 'null'], format: date-time }
+    CreateLostItem:
+      type: object
+      additionalProperties: false
+      required: [description]
+      properties:
+        description: { type: string, minLength: 1, maxLength: 200 }
+        foundWhere: { type: string, maxLength: 100 }
+    UpdateLostItem:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/LostItemStatus' }
     MapPointKind: { type: string, enum: [wifi, ehbo, water, toilet, ingang, uitgang, eten, activiteit, oplaadpunt, info] }
     MapPoint:
       type: object

@@ -1406,3 +1406,116 @@ textarea {
     transition: none !important;
   }
 }
+
+/* ---------------------------------------------------------------- festivals
+   Balk bovenaan de kaart, timetable en meldingen: bij welk festival kijk je? */
+.festival-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.festival-bar strong {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.festival-bar-action {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+/* Amber betekent in de hele app: nu live */
+.badge.live {
+  background: var(--stagelight);
+  color: #1b1200;
+}
+/* Het gekozen festival */
+.list.festivals .row[aria-pressed='true'] {
+  background: var(--surface-2);
+  box-shadow: inset 4px 0 0 var(--laser);
+}
+.list.festivals .row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.add-ticket {
+  margin-top: 16px;
+}
+a.row {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ---------------------------------------------------------------- Meer */
+.list-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 20px 4px 8px;
+}
+.list-title:first-child {
+  margin-top: 0;
+}
+/* Rij zonder knop (alleen informatie) */
+.row.static {
+  cursor: default;
+}
+.badge.vip {
+  background: var(--gradient-strong);
+  color: white;
+}
+/* Plattegrond: past op het scherm; ingezoomd kun je schuiven */
+.site-map {
+  overflow: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  max-height: 65vh;
+  margin-bottom: 12px;
+}
+.site-map img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.site-map.zoomed img {
+  width: 250%;
+  max-width: none;
+}
+.faq {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.faq summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+.faq details[open] summary {
+  margin-bottom: 8px;
+}
+.rules {
+  margin: 0;
+  padding-left: 36px;
+  display: grid;
+  gap: 8px;
+}
+.legal {
+  display: grid;
+  gap: 18px;
+}
+.legal section {
+  display: grid;
+  gap: 8px;
+}

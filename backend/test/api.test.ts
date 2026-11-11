@@ -690,6 +690,96 @@ describe.skipIf(!databaseUrl)('backend', () => {
     })
   })
 
+  describe('festivalinformatie', () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 7)])
+
+    it('bezoekers zien de huisregels en vragen van hun eigen festival', async () => {
+      const visitor = await login('anna@festival.test')
+      const info = await api('GET', '/festival-info', { token: visitor.accessToken })
+      expect(info.status).toBe(200)
+      expect(info.body.houseRulesNl).toContain('Geen glas')
+      expect(info.body.faq).toHaveLength(3)
+      expect(info.body.siteMapUpdatedAt).toBeNull()
+      // De vraag van het tweede festival staat er niet tussen
+      expect(info.body.faq.map((f: { questionNl: string }) => f.questionNl)).not.toContain('Mag ik op het strand zwemmen?')
+    })
+
+    it('organisatie past vragen en huisregels aan; EHBO en bezoekers niet', async () => {
+      const org = await login('organisatie@festival.test')
+      const ehbo = await login('ehbo@festival.test')
+      const body = { questionNl: 'Is er wifi?', questionEn: 'Is there wifi?', answerNl: 'Ja, bij de ingang.', answerEn: 'Yes, at the entrance.' }
+      expect((await api('POST', '/admin/faq', { token: ehbo.accessToken, body })).status).toBe(403)
+      const created = await api('POST', '/admin/faq', { token: org.accessToken, body })
+      expect(created.status).toBe(201)
+      const blank = await api('PATCH', `/admin/faq/${created.body.id}`, { token: org.accessToken, body: { answerNl: '   ' } })
+      expect(blank.status).toBe(400)
+      const updated = await api('PATCH', `/admin/faq/${created.body.id}`, { token: org.accessToken, body: { answerNl: 'Ja, overal.' } })
+      expect(updated.body.answerNl).toBe('Ja, overal.')
+      // Via een ander festival kun je deze vraag niet wijzigen
+      const admin2 = await login('beheerder2@festival.test')
+      expect((await api('DELETE', `/admin/faq/${created.body.id}`, { token: admin2.accessToken })).status).toBe(404)
+      expect((await api('DELETE', `/admin/faq/${created.body.id}`, { token: org.accessToken })).status).toBe(204)
+
+      const rules = { houseRulesNl: 'Geen glas.', houseRulesEn: 'No glass.' }
+      expect((await api('PUT', '/admin/house-rules', { token: ehbo.accessToken, body: rules })).status).toBe(403)
+      expect((await api('PUT', '/admin/house-rules', { token: org.accessToken, body: rules })).status).toBe(204)
+      const info = await api('GET', '/festival-info', { token: ehbo.accessToken })
+      expect(info.body.houseRulesNl).toBe('Geen glas.')
+    })
+
+    it('de assistent gebruikt de vragen van het festival', async () => {
+      const visitor = await login('anna@festival.test')
+      const res = await api('POST', '/chatbot', { token: visitor.accessToken, body: { question: 'Waar kan ik mijn telefoon opladen?' } })
+      expect(res.body.answer).toContain('oplaadkastjes')
+    })
+
+    it('plattegrond uploaden: alleen echte afbeeldingen, en bezoekers kunnen hem ophalen', async () => {
+      const org = await login('organisatie@festival.test')
+      const visitor = await login('bram@festival.test')
+      const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64')
+      expect((await api('PUT', '/admin/site-map', { token: org.accessToken, body: { image: svg } })).status).toBe(400)
+      const tooBig = Buffer.concat([png, Buffer.alloc(3 * 1024 * 1024)]).toString('base64')
+      expect((await api('PUT', '/admin/site-map', { token: org.accessToken, body: { image: tooBig } })).status).toBe(400)
+
+      const uploaded = await api('PUT', '/admin/site-map', { token: org.accessToken, body: { image: png.toString('base64') } })
+      expect(uploaded.status).toBe(200)
+      const info = await api('GET', '/festival-info', { token: visitor.accessToken })
+      expect(info.body.siteMapUpdatedAt).toBe(uploaded.body.siteMapUpdatedAt)
+
+      const res = await fetch(`${base}/site-map`, { headers: { Authorization: `Bearer ${visitor.accessToken}` } })
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toBe('image/png')
+      expect(res.headers.get('content-security-policy')).toBe("default-src 'none'")
+      expect(Buffer.from(await res.arrayBuffer()).equals(png)).toBe(true)
+
+      // Het tweede festival heeft geen plattegrond
+      const admin2 = await login('beheerder2@festival.test')
+      const other = await fetch(`${base}/site-map`, { headers: { Authorization: `Bearer ${admin2.accessToken}` } })
+      expect(other.status).toBe(404)
+    })
+
+    it('gevonden voorwerpen: personeel registreert, bezoekers zien wat nog niet is opgehaald', async () => {
+      const ehbo = await login('ehbo@festival.test')
+      const visitor = await login('anna@festival.test')
+      const created = await api('POST', '/admin/lost-items', { token: ehbo.accessToken, body: { description: 'Rode pet', foundWhere: 'EHBO-post' } })
+      expect(created.status).toBe(201)
+      expect(created.body).toMatchObject({ description: 'Rode pet', status: 'gevonden', collectedAt: null })
+      expect((await api('POST', '/admin/lost-items', { token: visitor.accessToken, body: { description: 'Nep' } })).status).toBe(403)
+
+      let list = await api('GET', '/lost-items', { token: visitor.accessToken })
+      expect(list.body.map((i: { id: string }) => i.id)).toContain(created.body.id)
+
+      const collected = await api('PATCH', `/admin/lost-items/${created.body.id}`, { token: ehbo.accessToken, body: { status: 'opgehaald' } })
+      expect(collected.body.collectedAt).not.toBeNull()
+      list = await api('GET', '/lost-items', { token: visitor.accessToken })
+      expect(list.body.map((i: { id: string }) => i.id)).not.toContain(created.body.id)
+      // Verwijderen mag EHBO niet, de organisatie wel
+      expect((await api('DELETE', `/admin/lost-items/${created.body.id}`, { token: ehbo.accessToken })).status).toBe(403)
+      const org = await login('organisatie@festival.test')
+      expect((await api('DELETE', `/admin/lost-items/${created.body.id}`, { token: org.accessToken })).status).toBe(204)
+    })
+  })
+
   describe('drukte en chatbot', () => {
     it('IoT-meting met sleutel, zonder sleutel 401', async () => {
       const visitor = await login('anna@festival.test')

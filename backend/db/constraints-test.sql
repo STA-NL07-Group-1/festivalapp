@@ -138,6 +138,20 @@ SELECT pg_temp.expect_fail('tweede sudo-account',
 SELECT pg_temp.expect_fail('festivalblokkade zonder reden',
     $q$INSERT INTO festival_blocks (festival_id, user_id, reason) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000002', '')$q$);
 
+-- --- festivalinformatie ----------------------------------------------------
+SELECT pg_temp.expect_fail('vraag zonder tekst',
+    $q$INSERT INTO faq_items (festival_id, question_nl, question_en, answer_nl, answer_en) VALUES ('00000000-0000-4000-8000-000000000001', '', 'Q', 'A', 'A')$q$);
+SELECT pg_temp.expect_fail('huisregels te lang',
+    $q$UPDATE festivals SET house_rules_nl = repeat('x', 5001) WHERE id = '00000000-0000-4000-8000-000000000001'$q$);
+SELECT pg_temp.expect_fail('plattegrond als svg',
+    $q$INSERT INTO site_maps (festival_id, content_type, data) VALUES ('00000000-0000-4000-8000-000000000001', 'image/svg+xml', '\x3c737667')$q$);
+SELECT pg_temp.expect_fail('lege plattegrond',
+    $q$INSERT INTO site_maps (festival_id, content_type, data) VALUES ('00000000-0000-4000-8000-000000000001', 'image/png', '')$q$);
+SELECT pg_temp.expect_fail('gevonden voorwerp zonder omschrijving',
+    $q$INSERT INTO lost_items (festival_id, description) VALUES ('00000000-0000-4000-8000-000000000001', '')$q$);
+SELECT pg_temp.expect_fail('opgehaald zonder tijdstip',
+    $q$INSERT INTO lost_items (festival_id, description, status) VALUES ('00000000-0000-4000-8000-000000000001', 'Zwarte jas', 'opgehaald')$q$);
+
 -- --- audit_log ---------------------------------------------------------------
 INSERT INTO audit_log (actor_id, action) VALUES ('00000000-0000-0000-0000-000000000001', 'auth.login');
 SELECT pg_temp.expect_fail('audit_log wijzigen',

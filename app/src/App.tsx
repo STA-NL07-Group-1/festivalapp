@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { api, type Announcement, type Friend } from './api/client'
+import { FestivalBar, NoFestivalScreen } from './components/festival'
 import { BellIcon, CalendarIcon, MapIcon, MenuIcon, UsersIcon } from './components/icons'
 import { useI18n } from './i18n'
 import { useAsync } from './lib/useAsync'
@@ -15,6 +16,8 @@ import { SessionProvider, useRealtime, useSession } from './state/session'
 
 type Tab = 'kaart' | 'timetable' | 'vrienden' | 'meldingen' | 'meer'
 const TABS: Tab[] = ['kaart', 'timetable', 'vrienden', 'meldingen', 'meer']
+// Deze tabbladen horen bij één festival. Vrienden en Meer horen bij je account.
+const FESTIVAL_TABS: Tab[] = ['kaart', 'timetable', 'meldingen']
 const DISMISSED_KEY = 'festivalapp.dismissedEmergencies'
 
 /** Leest deep links: ?vriend=CODE (QR), ?tab=…, ?chat=<userId> (pushmelding) */
@@ -57,7 +60,8 @@ function UpdatePrompt() {
 
 function Shell() {
   const { t, locale } = useI18n()
-  const { online } = useSession()
+  const { online, festival } = useSession()
+  const festivalId = festival?.id ?? null
   const [deepLink] = useState(readDeepLink)
   const [tab, setTab] = useState<Tab>(deepLink.friendCode ? 'vrienden' : (deepLink.tab ?? 'kaart'))
   const [chatWith, setChatWith] = useState<Friend | null>(null)
@@ -65,7 +69,8 @@ function Shell() {
   const [dismissed, setDismissed] = useState<string[]>(readDismissed)
   const [unread, setUnread] = useState(0)
 
-  const announcements = useAsync(() => api.get<Announcement[]>('/announcements'))
+  // Mededelingen van het gekozen festival; opnieuw ophalen als je van festival wisselt
+  const announcements = useAsync(() => (festivalId ? api.get<Announcement[]>('/announcements') : Promise.resolve([])), [festivalId])
   const setAnnouncements = announcements.setData
   useRealtime<Announcement>(
     'announcement',
@@ -137,13 +142,20 @@ function Shell() {
         </div>
       )}
 
+      {!chatWith && FESTIVAL_TABS.includes(tab) && <FestivalBar />}
+
       <main className="content">
         {chatWith ? (
           <ChatScreen friend={chatWith} onBack={() => setChatWith(null)} />
+        ) : !festival && FESTIVAL_TABS.includes(tab) ? (
+          <NoFestivalScreen />
         ) : (
           <>
-            {tab === 'kaart' && <MapScreen />}
-            {tab === 'timetable' && <TimetableScreen key={timetableFriend ?? 'own'} initialFriend={timetableFriend} />}
+            {/* key: bij een ander festival beginnen deze schermen opnieuw, zodat er niets van het vorige festival blijft staan */}
+            <Fragment key={festivalId ?? 'geen'}>
+              {tab === 'kaart' && <MapScreen />}
+              {tab === 'timetable' && <TimetableScreen key={timetableFriend ?? 'own'} initialFriend={timetableFriend} />}
+            </Fragment>
             {tab === 'vrienden' && (
               <FriendsScreen
                 initialCode={deepLink.friendCode}

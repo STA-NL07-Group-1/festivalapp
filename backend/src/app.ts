@@ -124,7 +124,7 @@ export function createApp(deps: Omit<Deps, 'realtime' | 'limiter'> & Partial<Pic
     if (route.roles && (!ctx.user || !ctx.festivalId || !route.roles.includes(ctx.user.role))) throw forbidden()
     if (route.platform && (!ctx.user?.platformRole || !route.platform.includes(ctx.user.platformRole))) throw forbidden()
 
-    ctx.body = await readJsonBody(req)
+    ctx.body = await readJsonBody(req, route.maxBodyBytes)
     validateBody(route.operationId, ctx.body)
 
     const reply = await route.handler(ctx)

@@ -1,5 +1,5 @@
 // WebSocket met automatisch opnieuw verbinden (met oplopende wachttijd).
-import { API_URL, getAccessToken } from '../api/client'
+import { API_URL, currentFestival, getAccessToken } from '../api/client'
 
 type Listener = (data: unknown) => void
 
@@ -27,7 +27,9 @@ export function connectRealtime(): RealtimeConnection {
     // API_URL kan absoluut zijn (http://localhost:3000) of relatief (/api achter de webserver)
     const base = new URL(API_URL, window.location.origin)
     base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${base.href.replace(/\/$/, '')}/ws?token=${encodeURIComponent(token)}`
+    // Alleen berichten van het gekozen festival (chat en vrienden komen altijd binnen)
+    const festival = currentFestival()
+    const url = `${base.href.replace(/\/$/, '')}/ws?token=${encodeURIComponent(token)}${festival ? `&festival=${festival}` : ''}`
     socket = new WebSocket(url)
     socket.onopen = () => {
       attempt = 0

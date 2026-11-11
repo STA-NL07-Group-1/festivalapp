@@ -19,6 +19,11 @@ Enum festival_role {
   beveiliging
 }
 
+Enum lost_item_status {
+  gevonden
+  opgehaald
+}
+
 Enum app_theme {
   systeem
   licht
@@ -92,6 +97,12 @@ TableGroup festivals_en_rollen {
   festival_blocks
 }
 
+TableGroup festivalinformatie {
+  faq_items
+  site_maps
+  lost_items
+}
+
 TableGroup sociaal {
   friend_codes
   friendships
@@ -120,7 +131,41 @@ Table festivals {
   name text [not null, note: '1–80 tekens']
   starts_at timestamptz [not null]
   ends_at timestamptz [not null, note: 'na starts_at; daarna verliezen bezoekers de toegang']
+  house_rules_nl text [note: 'max. 5000 tekens (migratie 0005)']
+  house_rules_en text [note: 'max. 5000 tekens']
   created_at timestamptz [not null, default: `now()`]
+}
+
+Table faq_items {
+  id uuid [pk, default: `gen_random_uuid()`]
+  festival_id uuid [not null, ref: > festivals.id]
+  question_nl text [not null, note: '1–200 tekens']
+  question_en text [not null, note: '1–200 tekens']
+  answer_nl text [not null, note: '1–2000 tekens']
+  answer_en text [not null, note: '1–2000 tekens']
+  sort_order integer [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+  Note: 'Veelgestelde vragen per festival. Ook gebruikt door de festivalassistent.'
+}
+
+Table site_maps {
+  festival_id uuid [pk, ref: - festivals.id]
+  content_type text [not null, note: 'image/png, image/jpeg of image/webp']
+  data bytea [not null, note: 'max. 3 MB']
+  updated_by uuid [ref: > users.id]
+  updated_at timestamptz [not null, default: `now()`]
+  Note: 'Plattegrond van het festival zelf'
+}
+
+Table lost_items {
+  id uuid [pk, default: `gen_random_uuid()`]
+  festival_id uuid [not null, ref: > festivals.id]
+  description text [not null, note: '1–200 tekens, geen persoonsgegevens']
+  found_where text [note: 'max. 100 tekens']
+  found_at timestamptz [not null, default: `now()`]
+  status lost_item_status [not null, default: 'gevonden']
+  collected_at timestamptz [note: 'gevuld als status = opgehaald']
+  created_by uuid [ref: > users.id]
 }
 
 Table festival_members {

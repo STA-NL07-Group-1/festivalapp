@@ -1083,6 +1083,8 @@ export interface components {
             role: components["schemas"]["Role"];
             /** @description Het festival is nu bezig */
             active: boolean;
+            /** @description Soort ticket (weekend, dag, vip); null als je geen ticket hebt, bijv. als personeel */
+            ticketType: string | null;
         };
         CreateFestival: {
             name: string;
@@ -1129,6 +1131,38 @@ export interface components {
         AddOwner: {
             /** Format: email */
             email: string;
+        };
+        FaqItem: {
+            /** Format: uuid */
+            id: string;
+            questionNl: string;
+            questionEn: string;
+            answerNl: string;
+            answerEn: string;
+            sortOrder: number;
+        };
+        FestivalInfo: {
+            houseRulesNl: string | null;
+            houseRulesEn: string | null;
+            /**
+             * Format: date-time
+             * @description Wanneer de plattegrond is geüpload; null als er geen is
+             */
+            siteMapUpdatedAt: string | null;
+            faq: components["schemas"]["FaqItem"][];
+        };
+        /** @enum {string} */
+        LostItemStatus: "gevonden" | "opgehaald";
+        LostItem: {
+            /** Format: uuid */
+            id: string;
+            description: string;
+            foundWhere: string | null;
+            /** Format: date-time */
+            foundAt: string;
+            status: components["schemas"]["LostItemStatus"];
+            /** Format: date-time */
+            collectedAt: string | null;
         };
         /** @enum {string} */
         MapPointKind: "wifi" | "ehbo" | "water" | "toilet" | "ingang" | "uitgang" | "eten" | "activiteit" | "oplaadpunt" | "info";

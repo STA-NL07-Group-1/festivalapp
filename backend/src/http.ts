@@ -53,6 +53,8 @@ export interface RouteOptions {
   platform?: PlatformRole[]
   /** Rate limit: maximaal `limit` verzoeken per `windowMs`, per gebruiker of IP */
   rateLimit?: { limit: number; windowMs: number }
+  /** Grotere body toestaan dan de standaard 100 kB (bijv. voor een afbeelding) */
+  maxBodyBytes?: number
 }
 
 export interface Route extends RouteOptions {
@@ -123,12 +125,12 @@ export class Router {
 
 const MAX_BODY_BYTES = 100_000
 
-export async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+export async function readJsonBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<unknown> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req) {
     size += (chunk as Buffer).length
-    if (size > MAX_BODY_BYTES) throw new HttpError(413, 'validation_failed', 'Verzoek is te groot.')
+    if (size > maxBytes) throw new HttpError(413, 'validation_failed', 'Verzoek is te groot.')
     chunks.push(chunk as Buffer)
   }
   if (size === 0) return undefined
@@ -148,6 +150,11 @@ export function sendJson(res: ServerResponse, status: number, body?: unknown, he
   res.statusCode = status
   if (body === undefined || status === 204) {
     res.end()
+    return
+  }
+  // Binaire inhoud (bijv. de plattegrond): de route zet zelf Content-Type
+  if (Buffer.isBuffer(body)) {
+    res.end(body)
     return
   }
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
