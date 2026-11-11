@@ -9,9 +9,10 @@ import { MapPointsPage } from './pages/MapPointsPage'
 import { SosPage } from './pages/SosPage'
 import { TicketsPage } from './pages/TicketsPage'
 import { TimetablePage } from './pages/TimetablePage'
+import { UsersPage } from './pages/UsersPage'
 import { RealtimeContext } from './lib/realtimeContext'
 
-type Page = 'sos' | 'meldingen' | 'timetable' | 'kaartpunten' | 'drukte' | 'tickets'
+type Page = 'sos' | 'meldingen' | 'timetable' | 'kaartpunten' | 'drukte' | 'tickets' | 'gebruikers'
 
 function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   const [error, setError] = useState<string | null>(null)
@@ -121,6 +122,7 @@ export default function App() {
     { id: 'kaartpunten', label: '📍 Kaartpunten', show: true },
     { id: 'drukte', label: '👥 Drukte', show: true },
     { id: 'tickets', label: '🎟️ Tickets', show: me.role === 'beheerder' },
+    { id: 'gebruikers', label: '👤 Gebruikers', show: me.role === 'beheerder' },
   ]
 
   return (
@@ -166,6 +168,7 @@ export default function App() {
           {page === 'meldingen' && <AnnouncementsPage />}
           {page === 'timetable' && <TimetablePage />}
           {page === 'kaartpunten' && <MapPointsPage />}
+          {page === 'gebruikers' && me.role === 'beheerder' && <UsersPage />}
           {page === 'drukte' && <CrowdPage />}
           {page === 'tickets' && me.role === 'beheerder' && <TicketsPage />}
         </main>

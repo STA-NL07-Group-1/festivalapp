@@ -15,6 +15,17 @@ export const toMe = (r: Row) => ({
   shareTimetable: r.share_timetable,
 })
 
+export const toAdminUser = (r: Row) => ({
+  id: r.id,
+  email: r.email,
+  displayName: r.display_name,
+  role: r.role,
+  ticketType: r.ticket_type ?? null,
+  blocked: r.blocked_at != null,
+  blockedReason: r.blocked_reason ?? null,
+  createdAt: iso(r.created_at),
+})
+
 export const toFriend = (r: Row) => ({ id: r.id, displayName: r.display_name, since: iso(r.since) })
 
 export const toFriendLocation = (r: Row) => ({

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { api, ApiError, type MapPoint, type MapPointKind } from '../api/client'
+import { api, ApiError, type MapPoint, type MapPointKind, type Stage } from '../api/client'
+import { PositionPicker } from '../components/PositionPicker'
 import { useAsync } from '../lib/useAsync'
 
 const KINDS: { value: MapPointKind; label: string }[] = [
@@ -29,6 +30,7 @@ const EMPTY: Draft = { kind: 'wifi', name: '', description: '', latitude: '', lo
 
 export function MapPointsPage() {
   const list = useAsync(() => api.get<MapPoint[]>('/map-points'))
+  const stages = useAsync(() => api.get<Stage[]>('/stages'))
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [error, setError] = useState<string | null>(null)
   const [locating, setLocating] = useState(false)
@@ -58,12 +60,11 @@ export function MapPointsPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    const latitude = Number(draft.latitude.replace(',', '.'))
-    const longitude = Number(draft.longitude.replace(',', '.'))
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      setError('Vul een geldige breedte- en lengtegraad in, bijvoorbeeld 52.3868 en 4.8745.')
+    if (!position) {
+      setError('Kies eerst een plek: klik op de kaart of gebruik je huidige locatie.')
       return
     }
+    const { latitude, longitude } = position
     const body = { kind: draft.kind, name: draft.name.trim(), latitude, longitude }
     try {
       if (draft.id) {
@@ -89,6 +90,14 @@ export function MapPointsPage() {
       setError(e instanceof ApiError ? e.message : 'Verwijderen mislukt.')
     }
   }
+
+  // De gekozen plek, als de velden een geldige positie bevatten
+  const lat = Number(draft.latitude.replace(',', '.'))
+  const lng = Number(draft.longitude.replace(',', '.'))
+  const position =
+    draft.latitude.trim() && draft.longitude.trim() && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+      ? { latitude: lat, longitude: lng }
+      : null
 
   const sorted = [...(list.data ?? [])].sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
 
@@ -121,19 +130,42 @@ export function MapPointsPage() {
             Uitleg (optioneel)
             <textarea value={draft.description} onChange={(e) => set({ description: e.target.value })} maxLength={200} rows={2} />
           </label>
-          <div className="grid-2">
-            <label>
-              Breedtegraad
-              <input value={draft.latitude} onChange={(e) => set({ latitude: e.target.value })} required inputMode="decimal" placeholder="52.3868" />
-            </label>
-            <label>
-              Lengtegraad
-              <input value={draft.longitude} onChange={(e) => set({ longitude: e.target.value })} required inputMode="decimal" placeholder="4.8745" />
-            </label>
+          <div>
+            <p className="field-label">Plek op de kaart</p>
+            <p className="muted small">Klik op de kaart om de plek te kiezen. Je kunt de marker daarna nog verslepen.</p>
+            {stages.loading || list.loading ? (
+              <p className="muted">Kaart laden…</p>
+            ) : (
+              // Pas tonen als de podia er zijn: de kaart kiest zijn beginpunt maar één keer
+              <PositionPicker
+                value={position}
+                onChange={(p) => set({ latitude: p.latitude.toFixed(6), longitude: p.longitude.toFixed(6) })}
+                stages={stages.data ?? []}
+                points={list.data ?? []}
+                editingId={draft.id}
+              />
+            )}
+            <p className="muted small" aria-live="polite">
+              {position ? `Gekozen: ${position.latitude.toFixed(5)}, ${position.longitude.toFixed(5)}` : 'Nog geen plek gekozen.'}
+            </p>
           </div>
           <button type="button" className="button" onClick={takeMyLocation} disabled={locating}>
             {locating ? 'Locatie zoeken…' : '📍 Mijn huidige locatie gebruiken'}
           </button>
+          {/* Voor wie de kaart niet kan bedienen (toetsenbord, schermlezer): zelf invullen blijft mogelijk */}
+          <details>
+            <summary>Coördinaten zelf invullen</summary>
+            <div className="grid-2">
+              <label>
+                Breedtegraad
+                <input value={draft.latitude} onChange={(e) => set({ latitude: e.target.value })} inputMode="decimal" placeholder="52.3868" />
+              </label>
+              <label>
+                Lengtegraad
+                <input value={draft.longitude} onChange={(e) => set({ longitude: e.target.value })} inputMode="decimal" placeholder="4.8745" />
+              </label>
+            </div>
+          </details>
           {error && <p className="error">{error}</p>}
           <button className="button primary">{draft.id ? 'Opslaan' : 'Toevoegen'}</button>
           {draft.id && (

@@ -1059,6 +1059,54 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /admin/users:
+    get:
+      tags: [admin]
+      operationId: listUsers
+      summary: Zoek gebruikers (maximaal 100)
+      x-roles: [beheerder]
+      parameters:
+        - name: q
+          in: query
+          description: Zoekt in naam en e-mailadres
+          schema: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: Gebruikers, op naam
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: { $ref: '#/components/schemas/AdminUser' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    patch:
+      tags: [admin]
+      operationId: updateUser
+      summary: Wijzig het tickettype of blokkeer een bezoeker
+      description: Alleen bezoekers. Blokkeren logt de bezoeker direct uit; een geblokkeerd account kan niet meer inloggen.
+      x-roles: [beheerder]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUser' }
+      responses:
+        '200':
+          description: Gewijzigd
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /admin/tickets/import:
     post:
       tags: [admin]
@@ -1363,6 +1411,28 @@ components:
         longitude: { type: number }
         capacity: { type: integer }
         sortOrder: { type: integer }
+    TicketType: { type: string, enum: [weekend, dag, vip] }
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, displayName, role, ticketType, blocked, blockedReason, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        displayName: { type: string }
+        role: { type: string, enum: [bezoeker, organisatie, beheerder] }
+        ticketType: { type: [string, 'null'] }
+        blocked: { type: boolean }
+        blockedReason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    UpdateUser:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        ticketType: { $ref: '#/components/schemas/TicketType' }
+        blocked: { type: boolean }
+        blockedReason: { type: string, minLength: 1, maxLength: 200 }
     MapPointKind: { type: string, enum: [wifi, ehbo, water, toilet, ingang, uitgang, eten, activiteit, oplaadpunt, info] }
     MapPoint:
       type: object

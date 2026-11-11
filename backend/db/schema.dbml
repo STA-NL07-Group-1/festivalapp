@@ -126,6 +126,8 @@ Table users {
   share_timetable boolean [not null, default: false]
   failed_logins integer [not null, default: 0]
   locked_until timestamptz
+  blocked_at timestamptz [note: 'Geblokkeerd door een beheerder (migratie 0003)']
+  blocked_reason text [note: 'Korte neutrale reden, max. 200 tekens']
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
 }

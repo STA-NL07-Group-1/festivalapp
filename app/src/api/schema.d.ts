@@ -660,6 +660,45 @@ export interface paths {
         patch: operations["updateSosAlert"];
         trace?: never;
     };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Zoek gebruikers (maximaal 100) */
+        get: operations["listUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Wijzig het tickettype of blokkeer een bezoeker
+         * @description Alleen bezoekers. Blokkeren logt de bezoeker direct uit; een geblokkeerd account kan niet meer inloggen.
+         */
+        patch: operations["updateUser"];
+        trace?: never;
+    };
     "/admin/tickets/import": {
         parameters: {
             query?: never;
@@ -834,6 +873,26 @@ export interface components {
             longitude: number;
             capacity: number;
             sortOrder: number;
+        };
+        /** @enum {string} */
+        TicketType: "weekend" | "dag" | "vip";
+        AdminUser: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            displayName: string;
+            /** @enum {string} */
+            role: "bezoeker" | "organisatie" | "beheerder";
+            ticketType: string | null;
+            blocked: boolean;
+            blockedReason: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        UpdateUser: {
+            ticketType?: components["schemas"]["TicketType"];
+            blocked?: boolean;
+            blockedReason?: string;
         };
         /** @enum {string} */
         MapPointKind: "wifi" | "ehbo" | "water" | "toilet" | "ingang" | "uitgang" | "eten" | "activiteit" | "oplaadpunt" | "info";
@@ -2508,6 +2567,61 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["SosAlert"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listUsers: {
+        parameters: {
+            query?: {
+                /** @description Zoekt in naam en e-mailadres */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Gebruikers, op naam */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUser"];
+            };
+        };
+        responses: {
+            /** @description Gewijzigd */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
                 };
             };
             400: components["responses"]["BadRequest"];
