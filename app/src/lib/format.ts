@@ -19,6 +19,13 @@ export function formatDay(day: string, locale: Locale): string {
   )
 }
 
+/** "za 20 jun – ma 22 jun", of één dag als begin en eind op dezelfde dag vallen */
+export function formatDateRange(startIso: string, endIso: string, locale: Locale): string {
+  const start = festivalDay(startIso)
+  const end = festivalDay(endIso)
+  return start === end ? formatDay(start, locale) : `${formatDay(start, locale)} – ${formatDay(end, locale)}`
+}
+
 export function formatRelative(iso: string, locale: Locale, now = Date.now()): string {
   const seconds = Math.round((new Date(iso).getTime() - now) / 1000)
   const rtf = new Intl.RelativeTimeFormat(tag(locale), { numeric: 'auto' })

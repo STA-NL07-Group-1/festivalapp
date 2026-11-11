@@ -1,4 +1,4 @@
-// Sessie: ingelogde gebruiker, instellingen (thema/taal) en de realtime-verbinding.
+// Sessie: ingelogde gebruiker, instellingen (thema/taal), het gekozen festival en de realtime-verbinding.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   api,
@@ -7,16 +7,18 @@ import {
   hasStoredSession,
   isNetworkOnline,
   onNetworkChange,
+  setFestival,
   setNetworkOnline,
   setSessionEndedHandler,
   storeTokens,
   type AuthTokens,
+  type Festival,
   type Me,
 } from '../api/client'
 import { I18nProvider } from '../i18n'
 import { detectLocale } from '../i18n/translate'
 import type { Locale } from '../lib/format'
-import { clearOffline, loadOffline, saveOffline } from '../lib/offlineStore'
+import { clearOffline, clearOfflineFestival, loadOffline, saveOffline } from '../lib/offlineStore'
 import { connectRealtime, type RealtimeConnection } from '../lib/realtime'
 
 type Status = 'loading' | 'anonymous' | 'authenticated'
@@ -24,6 +26,10 @@ type Status = 'loading' | 'anonymous' | 'authenticated'
 interface Session {
   status: Status
   me: Me | null
+  /** Festivals waar je bij mag: met een ticket (tot het festival is afgelopen) of als personeel */
+  festivals: Festival[]
+  /** Het gekozen festival; null als je (nog) bij geen festival hoort */
+  festival: Festival | null
   realtime: RealtimeConnection | null
   /** Er is internet en de server is bereikbaar */
   online: boolean
@@ -37,6 +43,55 @@ interface Session {
   updateMe(patch: Partial<Pick<Me, 'displayName' | 'theme' | 'locale' | 'shareLocation' | 'shareTimetable'>>): Promise<void>
   deleteAccount(): Promise<void>
   setLocale(locale: Locale): void
+  /** Wissel van festival: de app haalt daarna alles opnieuw op */
+  chooseFestival(id: string): Promise<void>
+  /** Voegt een ticket toe en kiest het festival dat erbij hoort. Geeft dat festival terug. */
+  addTicket(ticketCode: string): Promise<Festival | null>
+}
+
+const FESTIVAL_KEY = 'festivalapp.festival'
+
+function rememberedFestival(): string | null {
+  try {
+    return localStorage.getItem(FESTIVAL_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberFestival(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(FESTIVAL_KEY, id)
+    else localStorage.removeItem(FESTIVAL_KEY)
+  } catch {
+    /* niets */
+  }
+}
+
+interface Loaded {
+  me: Me
+  festivals: Festival[]
+}
+
+/**
+ * Haalt je festivals en je account op en kiest een festival: `preferred`, anders het festival
+ * van de vorige keer, anders het festival dat de server voorstelt (nu bezig, of het eerstvolgende).
+ */
+async function loadAccount(preferred?: string): Promise<Loaded> {
+  const festivals = await api.get<Festival[]>('/festivals')
+  const wanted = preferred ?? rememberedFestival()
+  const chosen = festivals.find((f) => f.id === wanted) ?? festivals[0] ?? null
+  setFestival(chosen?.id ?? null)
+  const me = await api.get<Me>('/me')
+
+  // Festivals waar je niet meer bij mag (afgelopen of geblokkeerd): bewaarde gegevens weggooien
+  const before = loadOffline<Festival[]>('festivals')?.data ?? []
+  for (const old of before) if (!festivals.some((f) => f.id === old.id)) clearOfflineFestival(old.id)
+
+  saveOffline('festivals', festivals)
+  saveOffline('me', me)
+  rememberFestival(me.festivalId)
+  return { me, festivals }
 }
 
 const SessionContext = createContext<Session | null>(null)
@@ -62,47 +117,72 @@ function applyTheme(dark: boolean) {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>(() => (hasStoredSession() ? 'loading' : 'anonymous'))
   const [me, setMe] = useState<Me | null>(null)
+  const [festivals, setFestivals] = useState<Festival[]>([])
   const [localLocale, setLocalLocale] = useState<Locale>(detectLocale)
   const [realtime, setRealtime] = useState<RealtimeConnection | null>(null)
   const [online, setOnline] = useState(isNetworkOnline)
   const [live, setLive] = useState(false)
 
   const locale: Locale = me?.locale ?? localLocale
+  const festivalId = me?.festivalId ?? null
+  const festival = festivals.find((f) => f.id === festivalId) ?? null
   const prefersDark = usePrefersDark()
   const dark = me?.theme === 'donker' || (me?.theme !== 'licht' && prefersDark)
 
   const endSession = useCallback(() => {
     clearTokens()
     clearOffline()
+    setFestival(null)
+    rememberFestival(null)
     setMe(null)
+    setFestivals([])
     setStatus('anonymous')
   }, [])
 
   useEffect(() => setSessionEndedHandler(endSession), [endSession])
 
+  const applyLoaded = useCallback(({ me: user, festivals: list }: Loaded) => {
+    setFestivals(list)
+    setMe(user)
+  }, [])
+
   // Bij het opstarten: bestaande sessie herstellen
   useEffect(() => {
     if (status !== 'loading') return
-    api
-      .get<Me>('/me')
-      .then((user) => {
-        saveOffline('me', user)
-        setMe(user)
+    loadAccount()
+      .then((loaded) => {
+        applyLoaded(loaded)
         setStatus('authenticated')
       })
       .catch((error: unknown) => {
-        // Zonder internet: niet uitloggen, maar verder met het bewaarde account
+        // Zonder internet: niet uitloggen, maar verder met het bewaarde account en festival
         const stored = loadOffline<Me>('me')
         if (error instanceof ApiError && error.status === 0 && stored) {
+          setFestival(stored.data.festivalId)
+          setFestivals(loadOffline<Festival[]>('festivals')?.data ?? [])
           setMe(stored.data)
           setStatus('authenticated')
           return
         }
         endSession()
       })
-  }, [status, endSession])
+  }, [status, endSession, applyLoaded])
 
-  // Realtime-verbinding zolang je bent ingelogd
+  // Terug in de app (bijv. de volgende ochtend): festivals opnieuw ophalen. Is het gekozen
+  // festival intussen afgelopen, dan kiest loadAccount vanzelf een ander.
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || !isNetworkOnline()) return
+      loadAccount(festivalId ?? undefined)
+        .then(applyLoaded)
+        .catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [status, festivalId, applyLoaded])
+
+  // Realtime-verbinding zolang je bent ingelogd; opnieuw verbinden bij een ander festival
   useEffect(() => {
     if (status !== 'authenticated') return
     const connection = connectRealtime()
@@ -120,7 +200,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setRealtime(null)
       setLive(false)
     }
-  }, [status])
+  }, [status, festivalId])
 
   useEffect(() => {
     const offNetwork = onNetworkChange(setOnline)
@@ -144,18 +224,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = locale
   }, [locale])
 
-  const startSession = useCallback(async (tokens: AuthTokens) => {
-    storeTokens(tokens)
-    const user = await api.get<Me>('/me')
-    saveOffline('me', user)
-    setMe(user)
-    setStatus('authenticated')
-  }, [])
+  const startSession = useCallback(
+    async (tokens: AuthTokens) => {
+      storeTokens(tokens)
+      applyLoaded(await loadAccount())
+      setStatus('authenticated')
+    },
+    [applyLoaded],
+  )
 
   const value = useMemo<Session>(
     () => ({
       status,
       me,
+      festivals,
+      festival,
       realtime,
       online,
       live,
@@ -179,6 +262,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await api.delete('/me')
         endSession()
       },
+      async chooseFestival(id) {
+        applyLoaded(await loadAccount(id))
+      },
+      async addTicket(ticketCode) {
+        const before = new Set(festivals.map((f) => f.id))
+        const list = await api.post<Festival[]>('/me/tickets', { ticketCode: ticketCode.trim().toUpperCase() })
+        const added = list.find((f) => !before.has(f.id)) ?? null
+        applyLoaded(await loadAccount(added?.id ?? festivalId ?? undefined))
+        return added
+      },
       setLocale(next) {
         setLocalLocale(next)
         try {
@@ -188,7 +281,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [status, me, realtime, online, live, dark, locale, startSession, endSession],
+    [status, me, festivals, festival, festivalId, realtime, online, live, dark, locale, startSession, endSession, applyLoaded],
   )
 
   return (

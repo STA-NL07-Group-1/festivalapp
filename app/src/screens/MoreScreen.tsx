@@ -1,60 +1,183 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../api/client'
-import { BackIcon, ChevronIcon } from '../components/icons'
-import { ErrorNote, Screen, Segmented, Toast, Toggle } from '../components/ui'
+import { ChevronIcon } from '../components/icons'
+import { AddTicketForm, FestivalList } from '../components/festival'
+import { BackLink, ErrorNote, Screen, Segmented, Toast, Toggle } from '../components/ui'
 import { useI18n } from '../i18n'
 import { disablePush, enablePush, getPushState, type PushState } from '../lib/push'
 import { useSession } from '../state/session'
+import { FestivalInfoScreen, type FestivalInfoView } from './FestivalInfoScreens'
+import { LegalScreen } from './LegalScreen'
+
+type View = 'menu' | 'festivals' | 'account' | 'settings' | 'assistant' | 'codeOfConduct' | 'privacyPolicy' | FestivalInfoView
+
+/** Eén regel in het menu van Meer */
+function MenuRow({ emoji, label, detail, onClick }: { emoji: string; label: string; detail?: string; onClick: () => void }) {
+  return (
+    <li>
+      <button type="button" className="row" onClick={onClick}>
+        <span className="emoji" aria-hidden="true">
+          {emoji}
+        </span>
+        <span className="grow">
+          {label}
+          {detail && <span className="muted small">{detail}</span>}
+        </span>
+        <ChevronIcon />
+      </button>
+    </li>
+  )
+}
 
 export function MoreScreen() {
   const { t } = useI18n()
-  const [view, setView] = useState<'menu' | 'settings' | 'assistant'>('menu')
+  const { me, festival } = useSession()
+  const [view, setView] = useState<View>('menu')
+  const back = () => setView('menu')
 
-  if (view === 'settings') return <SettingsScreen onBack={() => setView('menu')} />
-  if (view === 'assistant') return <AssistantScreen onBack={() => setView('menu')} />
+  if (view === 'festivals') return <MyFestivalsScreen onBack={back} />
+  if (view === 'account') return <AccountScreen onBack={back} />
+  if (view === 'settings') return <SettingsScreen onBack={back} />
+  if (view === 'assistant') return <AssistantScreen onBack={back} />
+  if (view === 'codeOfConduct') return <LegalScreen which="codeOfConduct" onBack={back} />
+  if (view === 'privacyPolicy') return <LegalScreen which="privacyPolicy" onBack={back} />
+  if (view !== 'menu') return <FestivalInfoScreen view={view} onBack={back} />
+
+  // Personeel en eigenaren krijgen een snelkoppeling naar het beheerportal
+  const staff = (me?.role ?? 'bezoeker') !== 'bezoeker' || Boolean(me?.platformRole)
 
   return (
     <Screen title={t('more.title')}>
+      {/* Wat bij het gekozen festival hoort. Alleen als je bij een festival hoort. */}
+      {festival && (
+        <>
+          <h2 className="list-title">{festival.name}</h2>
+          <ul className="list">
+            <MenuRow emoji="🗺️" label={t('info.siteMap')} onClick={() => setView('plattegrond')} />
+            <MenuRow emoji="❓" label={t('info.faq')} onClick={() => setView('faq')} />
+            <MenuRow emoji="📜" label={t('info.houseRules')} onClick={() => setView('huisregels')} />
+            <MenuRow emoji="🧳" label={t('info.lostItems')} onClick={() => setView('gevonden')} />
+            <MenuRow emoji="💬" label={t('more.assistant')} onClick={() => setView('assistant')} />
+          </ul>
+        </>
+      )}
+
+      <h2 className="list-title">{t('more.you')}</h2>
       <ul className="list">
-        <li>
-          <button type="button" className="row" onClick={() => setView('assistant')}>
-            <span className="emoji" aria-hidden="true">
-              💬
-            </span>
-            <span className="grow">{t('more.assistant')}</span>
-            <ChevronIcon />
-          </button>
-        </li>
-        <li>
-          <button type="button" className="row" onClick={() => setView('settings')}>
-            <span className="emoji" aria-hidden="true">
-              ⚙️
-            </span>
-            <span className="grow">{t('more.settings')}</span>
-            <ChevronIcon />
-          </button>
-        </li>
+        <MenuRow
+          emoji="🎟️"
+          label={t('more.festivals')}
+          detail={festival ? festival.name : t('festival.none.short')}
+          onClick={() => setView('festivals')}
+        />
+        <MenuRow emoji="👤" label={t('more.account')} detail={me?.displayName} onClick={() => setView('account')} />
+        <MenuRow emoji="⚙️" label={t('more.settings')} onClick={() => setView('settings')} />
+        {staff && (
+          <li>
+            <a className="row" href="/beheer/">
+              <span className="emoji" aria-hidden="true">
+                🛠️
+              </span>
+              <span className="grow">{t('more.portal')}</span>
+              <ChevronIcon />
+            </a>
+          </li>
+        )}
+      </ul>
+
+      <h2 className="list-title">{t('more.about')}</h2>
+      <ul className="list">
+        <MenuRow emoji="🤝" label={t('legal.codeOfConduct')} onClick={() => setView('codeOfConduct')} />
+        <MenuRow emoji="🔒" label={t('legal.privacyPolicy')} onClick={() => setView('privacyPolicy')} />
       </ul>
     </Screen>
   )
 }
 
-function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
+function MyFestivalsScreen({ onBack }: { onBack: () => void }) {
   const { t } = useI18n()
+  const [toast, setToast] = useState<string | null>(null)
   return (
-    <button type="button" className="back-link" onClick={onBack}>
-      <BackIcon /> {t('common.back')}
-      <span className="visually-hidden">{title}</span>
-    </button>
+    <Screen title={t('more.festivals')}>
+      <BackLink title={t('more.festivals')} onBack={onBack} />
+      <p className="muted">{t('festivals.intro')}</p>
+      <FestivalList onChosen={() => setToast(t('festivals.chosen'))} />
+      <AddTicketForm onAdded={(added) => setToast(added ? t('festivals.added', { name: added.name }) : t('festivals.addedOther'))} />
+      <Toast message={toast} onDone={() => setToast(null)} />
+    </Screen>
   )
 }
 
-function SettingsScreen({ onBack }: { onBack: () => void }) {
+/** Account: wat bij jou als persoon hoort en op de server staat */
+function AccountScreen({ onBack }: { onBack: () => void }) {
   const { t } = useI18n()
   const { me, updateMe, logout, deleteAccount } = useSession()
-  const [push, setPush] = useState<PushState>('off')
   const [toast, setToast] = useState<string | null>(null)
   const [name, setName] = useState(me?.displayName ?? '')
+
+  if (!me) return null
+
+  const save = async (patch: Parameters<typeof updateMe>[0]) => {
+    await updateMe(patch)
+    setToast(t('settings.saved'))
+  }
+
+  return (
+    <Screen title={t('more.account')}>
+      <BackLink title={t('more.account')} onBack={onBack} />
+
+      <section className="card">
+        <h2>{t('settings.profile')}</h2>
+        <form
+          className="inline-form"
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault()
+            if (name.trim()) void save({ displayName: name.trim() })
+          }}
+        >
+          <label className="grow">
+            {t('settings.name')}
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />
+          </label>
+          <button className="button small">{t('common.save')}</button>
+        </form>
+        <p className="muted small">{me.email}</p>
+      </section>
+
+      <section className="card">
+        <h2>{t('settings.privacy')}</h2>
+        <Toggle label={t('settings.shareLocation')} checked={me.shareLocation} onChange={(v) => void save({ shareLocation: v })} />
+        <Toggle label={t('settings.shareTimetable')} checked={me.shareTimetable} onChange={(v) => void save({ shareTimetable: v })} />
+      </section>
+
+      <section className="card">
+        <h2>{t('settings.account')}</h2>
+        <div className="stack">
+          <button type="button" className="button" onClick={() => void logout()}>
+            {t('settings.logout')}
+          </button>
+          <button
+            type="button"
+            className="button danger-outline"
+            onClick={() => {
+              if (window.confirm(t('settings.deleteConfirm'))) void disablePush().finally(() => void deleteAccount())
+            }}
+          >
+            {t('settings.delete')}
+          </button>
+        </div>
+      </section>
+      <Toast message={toast} onDone={() => setToast(null)} />
+    </Screen>
+  )
+}
+
+/** Instellingen van de app: weergave, taal en meldingen op dit apparaat */
+function SettingsScreen({ onBack }: { onBack: () => void }) {
+  const { t } = useI18n()
+  const { me, updateMe } = useSession()
+  const [push, setPush] = useState<PushState>('off')
+  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
     void getPushState().then(setPush)
@@ -75,25 +198,7 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <Screen title={t('more.settings')}>
-      <SubHeader title={t('more.settings')} onBack={onBack} />
-
-      <section className="card">
-        <h2>{t('settings.profile')}</h2>
-        <form
-          className="inline-form"
-          onSubmit={(e: FormEvent) => {
-            e.preventDefault()
-            if (name.trim()) void save({ displayName: name.trim() })
-          }}
-        >
-          <label className="grow">
-            {t('settings.name')}
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />
-          </label>
-          <button className="button small">{t('common.save')}</button>
-        </form>
-        <p className="muted small">{me.email}</p>
-      </section>
+      <BackLink title={t('more.settings')} onBack={onBack} />
 
       <section className="card">
         <h2>{t('settings.appearance')}</h2>
@@ -121,12 +226,6 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
       </section>
 
       <section className="card">
-        <h2>{t('settings.privacy')}</h2>
-        <Toggle label={t('settings.shareLocation')} checked={me.shareLocation} onChange={(v) => void save({ shareLocation: v })} />
-        <Toggle label={t('settings.shareTimetable')} checked={me.shareTimetable} onChange={(v) => void save({ shareTimetable: v })} />
-      </section>
-
-      <section className="card">
         <h2>{t('settings.notifications')}</h2>
         <Toggle
           label={t('settings.push')}
@@ -135,24 +234,6 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
           onChange={(v) => void (v ? enablePush() : disablePush()).then(setPush).catch(() => setToast(t('common.error')))}
         />
         {pushMessage[push] && <p className="muted small">{pushMessage[push]}</p>}
-      </section>
-
-      <section className="card">
-        <h2>{t('settings.account')}</h2>
-        <div className="stack">
-          <button type="button" className="button" onClick={() => void logout()}>
-            {t('settings.logout')}
-          </button>
-          <button
-            type="button"
-            className="button danger-outline"
-            onClick={() => {
-              if (window.confirm(t('settings.deleteConfirm'))) void disablePush().finally(() => void deleteAccount())
-            }}
-          >
-            {t('settings.delete')}
-          </button>
-        </div>
       </section>
       <Toast message={toast} onDone={() => setToast(null)} />
     </Screen>
@@ -189,7 +270,7 @@ function AssistantScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <Screen title={t('assistant.title')}>
-      <SubHeader title={t('assistant.title')} onBack={onBack} />
+      <BackLink title={t('assistant.title')} onBack={onBack} />
       <p className="muted">{t('assistant.intro')}</p>
       <div className="chat-messages assistant" aria-live="polite">
         {history.map((item, i) => (

@@ -8,7 +8,7 @@ import { SosButton } from '../components/SosButton'
 import { Segmented, Sheet } from '../components/ui'
 import { useI18n } from '../i18n'
 import { distanceM, formatRelative, formatTime, initials } from '../lib/format'
-import { loadOffline, saveOffline } from '../lib/offlineStore'
+import { festivalKey, loadOffline, saveOffline } from '../lib/offlineStore'
 import { useAsync, useOfflineAsync } from '../lib/useAsync'
 import { useRealtime, useSession } from '../state/session'
 
@@ -85,11 +85,14 @@ export function MapScreen() {
   const { me, updateMe, dark, online } = useSession()
   // Podia, kaartpunten, pins en vrienden worden op de telefoon bewaard voor als er geen internet is.
   // Drukte niet: een oude drukte-meting is eerder misleidend dan nuttig.
-  const stages = useOfflineAsync('stages', () => api.get<Stage[]>('/stages'))
-  const points = useOfflineAsync('map-points', () => api.get<MapPoint[]>('/map-points'))
+  // Elk festival heeft zijn eigen bewaarde gegevens. App.tsx bouwt dit scherm opnieuw op
+  // als je van festival wisselt, dus de sleutels veranderen niet terwijl het scherm open is.
+  const key = (name: string) => festivalKey(me?.festivalId ?? null, name)
+  const stages = useOfflineAsync(key('stages'), () => api.get<Stage[]>('/stages'))
+  const points = useOfflineAsync(key('map-points'), () => api.get<MapPoint[]>('/map-points'))
   const crowd = useAsync(() => api.get<CrowdLevel[]>('/crowd'))
-  const friends = useOfflineAsync('friends-locations', () => api.get<FriendLocation[]>('/friends/locations'))
-  const pins = useOfflineAsync('pins', () => api.get<Pin[]>('/pins'))
+  const friends = useOfflineAsync(key('friends-locations'), () => api.get<FriendLocation[]>('/friends/locations'))
+  const pins = useOfflineAsync(key('pins'), () => api.get<Pin[]>('/pins'))
 
   // Internet terug (van offline naar online): alles opnieuw ophalen
   const reloadStages = stages.reload

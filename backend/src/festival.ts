@@ -10,6 +10,8 @@ export interface FestivalAccess {
   startsAt: Date
   endsAt: Date
   role: Role
+  /** Soort ticket (weekend, dag, vip); null als je geen ticket hebt, bijv. als personeel */
+  ticketType: string | null
 }
 
 export interface UserAccess {
@@ -29,6 +31,7 @@ interface AccessRow {
   ends_at: Date
   member_role: FestivalRole | null
   has_ticket: boolean
+  ticket_type: string | null
   festival_blocked: boolean
 }
 
@@ -38,6 +41,7 @@ export async function loadAccess(db: Queryable, userId: string): Promise<UserAcc
     `SELECT u.platform_role, u.blocked_at, f.id, f.name, f.starts_at, f.ends_at,
             m.role AS member_role,
             EXISTS (SELECT 1 FROM tickets t WHERE t.festival_id = f.id AND t.user_id = u.id AND t.status = 'gekoppeld') AS has_ticket,
+            (SELECT t.ticket_type FROM tickets t WHERE t.festival_id = f.id AND t.user_id = u.id AND t.status = 'gekoppeld') AS ticket_type,
             EXISTS (SELECT 1 FROM festival_blocks b WHERE b.festival_id = f.id AND b.user_id = u.id) AS festival_blocked
        FROM users u
        LEFT JOIN festivals f ON true
@@ -57,7 +61,7 @@ export async function loadAccess(db: Queryable, userId: string): Promise<UserAcc
     else if (row.member_role) role = row.member_role
     // Bezoekers: alleen met een ticket, niet geblokkeerd, en tot het festival is afgelopen
     else if (row.has_ticket && !row.festival_blocked && row.ends_at.getTime() > now) role = 'bezoeker'
-    if (role) festivals.push({ id: row.id, name: row.name, startsAt: row.starts_at, endsAt: row.ends_at, role })
+    if (role) festivals.push({ id: row.id, name: row.name, startsAt: row.starts_at, endsAt: row.ends_at, role, ticketType: row.ticket_type })
   }
   // Volgorde: festivals die nu bezig zijn, dan de eerstvolgende, dan afgelopen festivals (alleen voor personeel)
   const rank = (f: FestivalAccess) => (f.endsAt.getTime() <= now ? 2 : f.startsAt.getTime() <= now ? 0 : 1)

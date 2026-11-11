@@ -876,6 +876,173 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/festival-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Huisregels, veelgestelde vragen en of er een plattegrond is */
+        get: operations["getFestivalInfo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/site-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** De plattegrond van dit festival (afbeelding) */
+        get: operations["getSiteMap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lost-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Gevonden voorwerpen die nog niet zijn opgehaald (laatste 30 dagen) */
+        get: operations["listLostItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/house-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Huisregels van dit festival opslaan */
+        put: operations["updateHouseRules"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/faq": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vraag toevoegen aan de veelgestelde vragen */
+        post: operations["createFaqItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/faq/{faqId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                faqId: components["parameters"]["FaqId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Vraag verwijderen */
+        delete: operations["deleteFaqItem"];
+        options?: never;
+        head?: never;
+        /** Vraag wijzigen */
+        patch: operations["updateFaqItem"];
+        trace?: never;
+    };
+    "/admin/site-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Plattegrond uploaden (vervangt de vorige)
+         * @description Het type wordt aan de inhoud herkend, niet aan de bestandsnaam. Geen svg.
+         */
+        put: operations["uploadSiteMap"];
+        post?: never;
+        /** Plattegrond weghalen */
+        delete: operations["deleteSiteMap"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/lost-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Alle gevonden voorwerpen van dit festival, ook opgehaalde */
+        get: operations["listAllLostItems"];
+        put?: never;
+        /**
+         * Gevonden voorwerp registreren
+         * @description Alleen een korte omschrijving, geen namen of andere persoonsgegevens van de eigenaar.
+         */
+        post: operations["createLostItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/lost-items/{lostItemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lostItemId: components["parameters"]["LostItemId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Gevonden voorwerp verwijderen */
+        delete: operations["deleteLostItem"];
+        options?: never;
+        head?: never;
+        /** Markeren als opgehaald (of terugzetten) */
+        patch: operations["updateLostItem"];
+        trace?: never;
+    };
     "/iot/crowd-readings": {
         parameters: {
             query?: never;
@@ -1083,6 +1250,8 @@ export interface components {
             role: components["schemas"]["Role"];
             /** @description Het festival is nu bezig */
             active: boolean;
+            /** @description Soort ticket (weekend, dag, vip); null als je geen ticket hebt, bijv. als personeel */
+            ticketType: string | null;
         };
         CreateFestival: {
             name: string;
@@ -1129,6 +1298,68 @@ export interface components {
         AddOwner: {
             /** Format: email */
             email: string;
+        };
+        FaqItem: {
+            /** Format: uuid */
+            id: string;
+            questionNl: string;
+            questionEn: string;
+            answerNl: string;
+            answerEn: string;
+            sortOrder: number;
+        };
+        CreateFaqItem: {
+            questionNl: string;
+            questionEn: string;
+            answerNl: string;
+            answerEn: string;
+            sortOrder?: number;
+        };
+        UpdateFaqItem: {
+            questionNl?: string;
+            questionEn?: string;
+            answerNl?: string;
+            answerEn?: string;
+            sortOrder?: number;
+        };
+        FestivalInfo: {
+            houseRulesNl: string | null;
+            houseRulesEn: string | null;
+            /**
+             * Format: date-time
+             * @description Wanneer de plattegrond is geüpload; null als er geen is
+             */
+            siteMapUpdatedAt: string | null;
+            faq: components["schemas"]["FaqItem"][];
+        };
+        UpdateHouseRules: {
+            /** @description Leeg = geen huisregels */
+            houseRulesNl: string;
+            houseRulesEn: string;
+        };
+        UploadSiteMap: {
+            /** @description png, jpeg of webp als base64, maximaal 3 MB */
+            image: string;
+        };
+        /** @enum {string} */
+        LostItemStatus: "gevonden" | "opgehaald";
+        LostItem: {
+            /** Format: uuid */
+            id: string;
+            description: string;
+            foundWhere: string | null;
+            /** Format: date-time */
+            foundAt: string;
+            status: components["schemas"]["LostItemStatus"];
+            /** Format: date-time */
+            collectedAt: string | null;
+        };
+        CreateLostItem: {
+            description: string;
+            foundWhere?: string;
+        };
+        UpdateLostItem: {
+            status: components["schemas"]["LostItemStatus"];
         };
         /** @enum {string} */
         MapPointKind: "wifi" | "ehbo" | "water" | "toilet" | "ingang" | "uitgang" | "eten" | "activiteit" | "oplaadpunt" | "info";
@@ -1380,6 +1611,8 @@ export interface components {
         UserId: string;
         PerformanceId: string;
         MapPointId: string;
+        FaqId: string;
+        LostItemId: string;
     };
     requestBodies: never;
     headers: never;
@@ -3157,6 +3390,342 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getFestivalInfo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Informatie van dit festival */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FestivalInfo"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getSiteMap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description png, jpeg of webp */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listLostItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Nieuwste eerst */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LostItem"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateHouseRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateHouseRules"];
+            };
+        };
+        responses: {
+            /** @description Opgeslagen */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createFaqItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFaqItem"];
+            };
+        };
+        responses: {
+            /** @description Toegevoegd */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FaqItem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    deleteFaqItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                faqId: components["parameters"]["FaqId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verwijderd */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateFaqItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                faqId: components["parameters"]["FaqId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFaqItem"];
+            };
+        };
+        responses: {
+            /** @description Gewijzigd */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FaqItem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    uploadSiteMap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadSiteMap"];
+            };
+        };
+        responses: {
+            /** @description Opgeslagen */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        siteMapUpdatedAt: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Bestand te groot */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteSiteMap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verwijderd */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAllLostItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eerst wat nog niet is opgehaald */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LostItem"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createLostItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLostItem"];
+            };
+        };
+        responses: {
+            /** @description Geregistreerd */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LostItem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    deleteLostItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lostItemId: components["parameters"]["LostItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verwijderd */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateLostItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lostItemId: components["parameters"]["LostItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLostItem"];
+            };
+        };
+        responses: {
+            /** @description Gewijzigd */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LostItem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

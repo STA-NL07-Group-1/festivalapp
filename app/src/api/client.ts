@@ -19,6 +19,10 @@ export type Announcement = Schemas['Announcement']
 export type SosAlert = Schemas['SosAlert']
 export type FriendCode = Schemas['FriendCode']
 export type AuthTokens = Schemas['AuthTokens']
+export type Festival = Schemas['Festival']
+export type FestivalInfo = Schemas['FestivalInfo']
+export type FaqItem = Schemas['FaqItem']
+export type LostItem = Schemas['LostItem']
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:3000'
 
@@ -56,6 +60,15 @@ export function setNetworkOnline(online: boolean): void {
 }
 
 let accessToken: string | null = null
+// Het festival dat nu in de app is gekozen. Gaat als header X-Festival-Id mee met elk verzoek.
+// Zonder keuze kiest de server zelf (het festival dat nu bezig is).
+let festivalId: string | null = null
+
+export function setFestival(id: string | null): void {
+  festivalId = id
+}
+export const currentFestival = () => festivalId
+
 let refreshing: Promise<boolean> | null = null
 let onSessionEnded: () => void = () => {}
 
@@ -142,6 +155,9 @@ export async function request<T = void>(method: string, path: string, body?: unk
   if (!publicRoute) {
     const token = await getAccessToken()
     if (token) headers.Authorization = `Bearer ${token}`
+    // De lijst met festivals altijd zonder keuze ophalen: is het gekozen festival afgelopen,
+    // dan weigert de server elk verzoek mét dat festival, en dan kun je geen ander meer kiezen
+    if (festivalId && path !== '/festivals') headers['X-Festival-Id'] = festivalId
   }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
@@ -173,6 +189,25 @@ export async function request<T = void>(method: string, path: string, body?: unk
   if (res.status === 204 || res.headers.get('content-length') === '0') return undefined as T
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
+}
+
+/** Haalt een bestand op (bijv. de plattegrond) met dezelfde login en hetzelfde festival als `request` */
+export async function requestBlob(path: string, retried = false): Promise<Blob> {
+  const headers: Record<string, string> = {}
+  const token = await getAccessToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (festivalId) headers['X-Festival-Id'] = festivalId
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}${path}`, { headers })
+  } catch {
+    setNetworkOnline(false)
+    throw new ApiError(0, 'offline', 'offline')
+  }
+  setNetworkOnline(true)
+  if (res.status === 401 && !retried && (await refresh())) return requestBlob(path, true)
+  if (!res.ok) throw new ApiError(res.status, 'http', res.statusText)
+  return res.blob()
 }
 
 export const api = {

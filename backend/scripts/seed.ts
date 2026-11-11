@@ -122,6 +122,38 @@ export async function seed(databaseUrl: string, log = console.log, { programOnly
       )
     }
 
+    // Informatie per festival (verzonnen testdata)
+    await client.query(
+      `UPDATE festivals SET house_rules_nl = $2, house_rules_en = $3 WHERE id = $1`,
+      [
+        FIRST_FESTIVAL,
+        'Geen glas, drugs of wapens op het terrein.\nRespecteer elkaar: geen intimidatie of discriminatie.\nVolg altijd de aanwijzingen van beveiliging en EHBO.\nOnder de 18 geen alcohol.\nHet terrein sluit om 01:00.',
+        'No glass, drugs or weapons on site.\nRespect each other: no intimidation or discrimination.\nAlways follow instructions from security and first aid.\nNo alcohol under 18.\nThe grounds close at 01:00.',
+      ],
+    )
+    const faq: [string, string, string, string][] = [
+      ['Mag ik eten en drinken meenemen?', 'Can I bring food and drinks?', 'Een lege drinkfles mag mee; die vul je gratis bij de tappunten. Eten niet, behalve babyvoeding.', 'An empty bottle is allowed; refill it for free at the water points. No food, except baby food.'],
+      ['Waar kan ik mijn telefoon opladen?', 'Where can I charge my phone?', 'Bij de infobalie bij de ingang staan oplaadkastjes.', 'There are charging lockers at the info desk near the entrance.'],
+      ['Mag ik het terrein verlaten en terugkomen?', 'Can I leave the grounds and come back?', 'Ja, met je bandje kun je de hele dag in en uit.', 'Yes, your wristband lets you come and go all day.'],
+    ]
+    for (const [i, [qNl, qEn, aNl, aEn]] of faq.entries()) {
+      await client.query(
+        'INSERT INTO faq_items (festival_id, question_nl, question_en, answer_nl, answer_en, sort_order) VALUES ($1, $2, $3, $4, $5, $6)',
+        [FIRST_FESTIVAL, qNl, qEn, aNl, aEn, i],
+      )
+    }
+    await client.query(
+      `INSERT INTO faq_items (festival_id, question_nl, question_en, answer_nl, answer_en)
+       VALUES ($1, 'Mag ik op het strand zwemmen?', 'Can I swim at the beach?', 'Alleen tussen de vlaggen en als de strandwacht er is.', 'Only between the flags and when lifeguards are on duty.')`,
+      [SECOND_FESTIVAL],
+    )
+    for (const [description, where] of [
+      ['Zwarte regenjas', 'Bij de Bosstage'],
+      ['Sleutelbos met blauw koord', 'Hoofdingang'],
+    ]) {
+      await client.query('INSERT INTO lost_items (festival_id, description, found_where) VALUES ($1, $2, $3)', [FIRST_FESTIVAL, description, where])
+    }
+
     const passwordHash = await hashPassword(DEMO_PASSWORD)
     // Personeel van het eerste festival. De rol hoort bij het festival, niet bij het account.
     const staff = [

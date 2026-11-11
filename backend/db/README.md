@@ -8,14 +8,15 @@ PostgreSQL 16 of nieuwer. Eigenaar: **Bob** (Network & Cloud), review op securit
 |---|---|
 | `migrations/0001_init.sql` | Eerste schema: 17 tabellen, enums, constraints, triggers. **Bron van waarheid.** |
 | `schema.dbml` | Hetzelfde schema als diagram. Plak het in [dbdiagram.io](https://dbdiagram.io). |
-| `constraints-test.sql` | Probeert 36 ongeldige dingen op te slaan en controleert dat de database ze weigert. |
+| `constraints-test.sql` | Probeert 42 ongeldige dingen op te slaan en controleert dat de database ze weigert. |
 | `create-test-db.sql` | Maakt `festivalapp_test` aan als je `docker compose up` gebruikt. |
 
-## De 21 tabellen
+## De 24 tabellen
 
 | Groep | Tabellen |
 |---|---|
 | Festivals en rollen | `festivals`, `festival_members`, `festival_blocks` |
+| Festivalinformatie | `faq_items`, `site_maps`, `lost_items` (en de huisregels in `festivals`) |
 | Accounts | `tickets`, `users`, `sessions` |
 | Sociaal | `friend_codes`, `friendships`, `locations`, `pins`, `messages` |
 | Programma | `stages`, `performances`, `timetable_entries`, `show_signups`, `crowd_readings` |

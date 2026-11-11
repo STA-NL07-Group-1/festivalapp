@@ -20,6 +20,8 @@ import { roleText } from './lib/roles'
 import { AnnouncementsPage } from './pages/AnnouncementsPage'
 import { CrowdPage } from './pages/CrowdPage'
 import { FestivalPage } from './pages/FestivalPage'
+import { InfoPage } from './pages/InfoPage'
+import { LostItemsPage } from './pages/LostItemsPage'
 import { MapPointsPage } from './pages/MapPointsPage'
 import { SosPage } from './pages/SosPage'
 import { TeamPage } from './pages/TeamPage'
@@ -28,7 +30,7 @@ import { TimetablePage } from './pages/TimetablePage'
 import { UsersPage } from './pages/UsersPage'
 import { RealtimeContext } from './lib/realtimeContext'
 
-type Page = 'sos' | 'meldingen' | 'timetable' | 'kaartpunten' | 'drukte' | 'tickets' | 'gebruikers' | 'team' | 'festival'
+type Page = 'sos' | 'meldingen' | 'timetable' | 'kaartpunten' | 'info' | 'gevonden' | 'drukte' | 'tickets' | 'gebruikers' | 'team' | 'festival'
 
 interface Session {
   me: Me
@@ -202,6 +204,8 @@ export default function App() {
     { id: 'meldingen', label: '📣 Mededelingen', show: organiser },
     { id: 'timetable', label: '🗓️ Timetable', show: organiser },
     { id: 'kaartpunten', label: '📍 Kaartpunten', show: organiser },
+    { id: 'info', label: 'ℹ️ Festivalinfo', show: organiser },
+    { id: 'gevonden', label: '🧳 Gevonden voorwerpen', show: festival !== null },
     { id: 'drukte', label: '👥 Drukte', show: festival !== null },
     { id: 'tickets', label: '🎟️ Tickets', show: admin },
     { id: 'gebruikers', label: '👤 Gebruikers', show: organiser },
@@ -273,6 +277,8 @@ export default function App() {
           {current === 'meldingen' && <AnnouncementsPage />}
           {current === 'timetable' && <TimetablePage />}
           {current === 'kaartpunten' && <MapPointsPage />}
+          {current === 'info' && <InfoPage />}
+          {current === 'gevonden' && <LostItemsPage me={me} />}
           {current === 'gebruikers' && <UsersPage me={me} />}
           {current === 'drukte' && <CrowdPage />}
           {current === 'tickets' && <TicketsPage />}

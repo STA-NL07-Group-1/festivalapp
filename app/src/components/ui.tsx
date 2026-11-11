@@ -1,7 +1,9 @@
 // Kleine bouwstenen van het designsysteem.
 import { useEffect, useId, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useI18n } from '../i18n'
 import { initials } from '../lib/format'
+import { BackIcon } from './icons'
 
 export function Screen({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
@@ -103,5 +105,16 @@ export function Toast({ message, onDone }: { message: string | null; onDone: () 
     <div className="toast" role="status">
       {message}
     </div>
+  )
+}
+
+/** Terug-knop bovenaan een subscherm (bijv. in Meer) */
+export function BackLink({ title, onBack }: { title: string; onBack: () => void }) {
+  const { t } = useI18n()
+  return (
+    <button type="button" className="back-link" onClick={onBack}>
+      <BackIcon /> {t('common.back')}
+      <span className="visually-hidden">{title}</span>
+    </button>
   )
 }

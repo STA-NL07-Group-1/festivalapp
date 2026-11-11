@@ -15,7 +15,8 @@ interface FaqItem {
   en: string
 }
 
-// Pas deze lijst aan voor jullie festival.
+// Algemene antwoorden. De veelgestelde vragen die de organisatie per festival invult
+// (tabel faq_items) gaan voor: die staan in festivalFaq.
 export const FAQ: FaqItem[] = [
   { keywords: ['toilet', 'wc', 'plassen', 'toiletten'], nl: 'Toiletten staan bij elk podium en bij de ingang. Op de kaart zijn ze te zien als 🚻.', en: 'Toilets are at every stage and at the entrance. Look for 🚻 on the map.' },
   { keywords: ['ehbo', 'eerste hulp', 'first aid', 'gewond', 'dokter', 'medic'], nl: 'De EHBO-post staat naast het hoofdpodium en is altijd open. Bij levensgevaar: bel 112 of gebruik de SOS-knop.', en: 'First aid is next to the main stage and always open. In an emergency: call 112 or use the SOS button.' },
@@ -27,6 +28,29 @@ export const FAQ: FaqItem[] = [
 ]
 
 type Locale = 'nl' | 'en'
+
+/** Vraag en antwoord uit het portal, al in de taal van de gebruiker */
+export interface FestivalFaq {
+  question: string
+  answer: string
+}
+
+const words = (text: string) => new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4))
+
+/** Vraag uit het portal die het meest op de vraag van de bezoeker lijkt (minstens twee woorden van 4+ letters gelijk) */
+export function matchFestivalFaq(question: string, faq: FestivalFaq[]): FestivalFaq | null {
+  const asked = words(question)
+  let best: FestivalFaq | null = null
+  let bestScore = 1
+  for (const item of faq) {
+    const score = [...words(item.question)].filter((w) => asked.has(w)).length
+    if (score > bestScore) {
+      best = item
+      bestScore = score
+    }
+  }
+  return best
+}
 
 interface ProgramRow {
   artist: string
@@ -44,7 +68,7 @@ function formatTime(date: Date, locale: Locale, timeZone: string): string {
   }).format(date)
 }
 
-export function answerWithoutAi(question: string, locale: Locale, program: ProgramRow[], timeZone: string): string {
+export function answerWithoutAi(question: string, locale: Locale, program: ProgramRow[], timeZone: string, festivalFaq: FestivalFaq[] = []): string {
   const q = question.toLowerCase()
   const artist = program.find((p) => q.includes(p.artist.toLowerCase()))
   if (artist) {
@@ -56,8 +80,10 @@ export function answerWithoutAi(question: string, locale: Locale, program: Progr
       ? `${artist.artist} speelt ${when} op ${artist.stage}.`
       : `${artist.artist} plays ${when} at ${artist.stage}.`
   }
-  const words = q.split(/[^\p{L}\p{N}]+/u)
-  const faq = FAQ.find((item) => item.keywords.some((k) => (k.includes(' ') ? q.includes(k) : words.includes(k))))
+  const own = matchFestivalFaq(question, festivalFaq)
+  if (own) return own.answer
+  const tokens = q.split(/[^\p{L}\p{N}]+/u)
+  const faq = FAQ.find((item) => item.keywords.some((k) => (k.includes(' ') ? q.includes(k) : tokens.includes(k))))
   if (faq) return faq[locale]
   return locale === 'nl'
     ? 'Dat weet ik helaas niet. Vraag het bij de infobalie bij de ingang, of kijk in de timetable.'
@@ -70,9 +96,13 @@ async function answerWithAi(
   program: ProgramRow[],
   timeZone: string,
   ai: { apiKey: string; model: string },
+  festivalFaq: FestivalFaq[] = [],
 ): Promise<string> {
   const context = [
-    'FAQ:',
+    'FAQ van dit festival (gaat voor):',
+    ...festivalFaq.map((f) => `- ${f.question} ${f.answer}`),
+    '',
+    'Algemene FAQ:',
     ...FAQ.map((f) => `- ${f[locale]}`),
     '',
     'Timetable:',
@@ -108,21 +138,29 @@ async function answerWithAi(
 export function chatbotRoutes(r: Router, deps: Deps): void {
   r.post('/chatbot', { operationId: 'askChatbot', rateLimit: { limit: 10, windowMs: 60_000 } }, async (ctx) => {
     const { question, locale = 'nl' } = ctx.body as { question: string; locale?: Locale }
+    const festivalId = requireFestival(ctx)
     const { rows } = await deps.db.query<ProgramRow>(
       `SELECT p.artist, s.name AS stage, p.starts_at, p.status
          FROM performances p JOIN stages s ON s.id = p.stage_id
         WHERE s.festival_id = $1
         ORDER BY p.starts_at LIMIT 300`,
-      [requireFestival(ctx)],
+      [festivalId],
+    )
+    const faqRows = await deps.db.query<{ question_nl: string; question_en: string; answer_nl: string; answer_en: string }>(
+      'SELECT question_nl, question_en, answer_nl, answer_en FROM faq_items WHERE festival_id = $1 ORDER BY sort_order LIMIT 100',
+      [festivalId],
+    )
+    const faq: FestivalFaq[] = faqRows.rows.map((f) =>
+      locale === 'nl' ? { question: f.question_nl, answer: f.answer_nl } : { question: f.question_en, answer: f.answer_en },
     )
     const tz = deps.config.festivalTimeZone
-    if (!deps.config.ai) return { status: 200, body: { answer: answerWithoutAi(question, locale, rows, tz) } }
+    if (!deps.config.ai) return { status: 200, body: { answer: answerWithoutAi(question, locale, rows, tz, faq) } }
     try {
-      return { status: 200, body: { answer: await answerWithAi(question, locale, rows, tz, deps.config.ai) } }
+      return { status: 200, body: { answer: await answerWithAi(question, locale, rows, tz, deps.config.ai, faq) } }
     } catch (error) {
       console.error('[chatbot] AI niet bereikbaar, val terug op FAQ', error)
       if (error instanceof HttpError) throw error
-      return { status: 200, body: { answer: answerWithoutAi(question, locale, rows, tz) } }
+      return { status: 200, body: { answer: answerWithoutAi(question, locale, rows, tz, faq) } }
     }
   })
 }

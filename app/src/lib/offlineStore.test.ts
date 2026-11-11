@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clearOffline, loadOffline, saveOffline } from './offlineStore'
+import { clearOffline, clearOfflineFestival, festivalKey, loadOffline, saveOffline } from './offlineStore'
 
 describe('offline opslag', () => {
   it('bewaart gegevens met het moment van opslaan', () => {
@@ -21,5 +21,15 @@ describe('offline opslag', () => {
     clearOffline()
     expect(loadOffline('me')).toBeNull()
     expect(localStorage.getItem('festivalapp.locale')).toBe('nl')
+  })
+
+  it('wist alleen de gegevens van één festival', () => {
+    saveOffline(festivalKey('fest-a', 'stages'), ['a'])
+    saveOffline(festivalKey('fest-b', 'stages'), ['b'])
+    saveOffline('me', { id: '1' })
+    clearOfflineFestival('fest-a')
+    expect(loadOffline(festivalKey('fest-a', 'stages'))).toBeNull()
+    expect(loadOffline<string[]>(festivalKey('fest-b', 'stages'))?.data).toEqual(['b'])
+    expect(loadOffline('me')).not.toBeNull()
   })
 })
