@@ -7,7 +7,7 @@
 // Privacy: het model krijgt ALLEEN openbare festivalinformatie, nooit gebruikers-ID's,
 // locaties of chats. Het antwoord is platte tekst; het model kan niets "doen".
 import type { Deps } from '../app.ts'
-import { HttpError, type Router } from '../http.ts'
+import { HttpError, requireFestival, type Router } from '../http.ts'
 
 interface FaqItem {
   keywords: string[]
@@ -111,7 +111,9 @@ export function chatbotRoutes(r: Router, deps: Deps): void {
     const { rows } = await deps.db.query<ProgramRow>(
       `SELECT p.artist, s.name AS stage, p.starts_at, p.status
          FROM performances p JOIN stages s ON s.id = p.stage_id
+        WHERE s.festival_id = $1
         ORDER BY p.starts_at LIMIT 300`,
+      [requireFestival(ctx)],
     )
     const tz = deps.config.festivalTimeZone
     if (!deps.config.ai) return { status: 200, body: { answer: answerWithoutAi(question, locale, rows, tz) } }

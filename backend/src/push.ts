@@ -16,12 +16,11 @@ export interface Push {
   enabled: boolean
   publicKey: string | null
   toUsers(userIds: string[], message: PushMessage): Promise<void>
-  toEveryone(message: PushMessage): Promise<void>
 }
 
 export function createPush(db: Db, vapid: { publicKey: string; privateKey: string; subject: string } | null): Push {
   if (!vapid) {
-    return { enabled: false, publicKey: null, toUsers: async () => {}, toEveryone: async () => {} }
+    return { enabled: false, publicKey: null, toUsers: async () => {} }
   }
   webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey)
 
@@ -50,10 +49,6 @@ export function createPush(db: Db, vapid: { publicKey: string; privateKey: strin
     async toUsers(userIds, message) {
       if (userIds.length === 0) return
       const { rows } = await db.query('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ANY($1)', [userIds])
-      await sendAll(rows, message)
-    },
-    async toEveryone(message) {
-      const { rows } = await db.query('SELECT id, endpoint, p256dh, auth FROM push_subscriptions')
       await sendAll(rows, message)
     },
   }

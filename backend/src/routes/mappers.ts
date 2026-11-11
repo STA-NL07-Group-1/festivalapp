@@ -4,11 +4,14 @@
 type Row = Record<string, unknown>
 const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? null : String(v))
 
-export const toMe = (r: Row) => ({
+/** `ctx` levert de rol en het festival van dit verzoek (zie app.ts) */
+export const toMe = (r: Row, ctx: { user: { role: string; platformRole: string | null } | null; festivalId: string | null }) => ({
   id: r.id,
   email: r.email,
   displayName: r.display_name,
-  role: r.role,
+  role: ctx.user?.role ?? 'bezoeker',
+  platformRole: ctx.user?.platformRole ?? null,
+  festivalId: ctx.festivalId,
   theme: r.theme,
   locale: r.locale,
   shareLocation: r.share_location,
@@ -19,12 +22,32 @@ export const toAdminUser = (r: Row) => ({
   id: r.id,
   email: r.email,
   displayName: r.display_name,
-  role: r.role,
   ticketType: r.ticket_type ?? null,
-  blocked: r.blocked_at != null,
-  blockedReason: r.blocked_reason ?? null,
+  // 'alle' = geblokkeerd voor alle festivals, 'festival' = alleen voor dit festival
+  blocked: r.blocked_at != null || r.festival_blocked_at != null,
+  blockScope: r.blocked_at != null ? 'alle' : r.festival_blocked_at != null ? 'festival' : null,
+  blockedReason: r.blocked_at != null ? (r.blocked_reason ?? null) : (r.festival_block_reason ?? null),
   createdAt: iso(r.created_at),
 })
+
+export const toFestival = (f: { id: string; name: string; startsAt: Date; endsAt: Date; role: string }) => ({
+  id: f.id,
+  name: f.name,
+  startsAt: f.startsAt.toISOString(),
+  endsAt: f.endsAt.toISOString(),
+  role: f.role,
+  active: f.startsAt.getTime() <= Date.now() && f.endsAt.getTime() > Date.now(),
+})
+
+export const toTeamMember = (r: Row) => ({
+  userId: r.user_id,
+  email: r.email,
+  displayName: r.display_name,
+  role: r.role,
+  addedAt: iso(r.created_at),
+})
+
+export const toOwner = (r: Row) => ({ userId: r.id, email: r.email, displayName: r.display_name, platformRole: r.platform_role })
 
 export const toFriend = (r: Row) => ({ id: r.id, displayName: r.display_name, since: iso(r.since) })
 

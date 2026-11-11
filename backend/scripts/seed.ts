@@ -1,5 +1,5 @@
-// Vult een LEGE database met demo-data: podia, een timetable van drie dagen (vanaf vandaag),
-// 50 tickets en een paar accounts met een bekend wachtwoord.
+// Vult een LEGE database met testdata: twee festivals, podia, een timetable van drie dagen
+// (vanaf vandaag), tickets en een paar accounts met een bekend wachtwoord. Alles is verzonnen.
 //
 //   npm run db:seed                  alles (alleen lokaal; weigert in productie)
 //   node scripts/seed.ts --programma alleen podia + timetable, ook in productie toegestaan
@@ -9,6 +9,10 @@ import { loadConfig } from '../src/config.ts'
 import { hashPassword, sha256 } from '../src/security.ts'
 
 export const DEMO_PASSWORD = 'Festival-demo-2026'
+/** Het eerste festival; wordt aangemaakt door migratie 0004 */
+export const FIRST_FESTIVAL = '00000000-0000-4000-8000-000000000001'
+/** Een tweede testfestival, om het wisselen tussen festivals te kunnen proberen */
+export const SECOND_FESTIVAL = '00000000-0000-4000-8000-000000000002'
 
 const STAGES = [
   { name: 'Hoofdpodium', lat: 52.3868, lng: 4.8745, capacity: 15000 },
@@ -38,8 +42,8 @@ export async function seed(databaseUrl: string, log = console.log, { programOnly
     const stageIds: string[] = []
     for (const [i, s] of STAGES.entries()) {
       const { rows } = await client.query(
-        'INSERT INTO stages (name, latitude, longitude, capacity, sort_order) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-        [s.name, s.lat, s.lng, s.capacity, i + 1],
+        'INSERT INTO stages (festival_id, name, latitude, longitude, capacity, sort_order) VALUES ($6, $1, $2, $3, $4, $5) RETURNING id',
+        [s.name, s.lat, s.lng, s.capacity, i + 1, FIRST_FESTIVAL],
       )
       stageIds.push(rows[0].id)
     }
@@ -81,30 +85,71 @@ export async function seed(databaseUrl: string, log = console.log, { programOnly
       ['oplaadpunt', 'Oplaadpunt bandjes', 0.0005, 0.0003],
     ]
     for (const [kind, name, dLat, dLng] of points) {
-      await client.query('INSERT INTO map_points (kind, name, latitude, longitude) VALUES ($1, $2, $3, $4)', [kind, name, base.lat + dLat, base.lng + dLng])
+      await client.query('INSERT INTO map_points (festival_id, kind, name, latitude, longitude) VALUES ($5, $1, $2, $3, $4)', [kind, name, base.lat + dLat, base.lng + dLng, FIRST_FESTIVAL])
     }
 
-    // Tickets DEMO-0001 … DEMO-0050
+    // Tickets DEMO-0001 … DEMO-0050 voor het eerste festival
     for (let i = 1; i <= 50; i++) {
       await client.query(
-        `INSERT INTO tickets (code_hash, valid_from, valid_until) VALUES ($1, now() - interval '1 day', now() + interval '30 days')`,
-        [sha256(`DEMO-${String(i).padStart(4, '0')}`)],
+        `INSERT INTO tickets (festival_id, code_hash, valid_from, valid_until) VALUES ($2, $1, now() - interval '1 day', now() + interval '30 days')`,
+        [sha256(`DEMO-${String(i).padStart(4, '0')}`), FIRST_FESTIVAL],
+      )
+    }
+
+    // Tweede testfestival met een eigen podium, kaartpunt en tickets TWEE-0001 … TWEE-0010
+    await client.query(
+      `INSERT INTO festivals (id, name, starts_at, ends_at)
+       VALUES ($1, 'Tweede Testfestival', now() - interval '1 hour', date_trunc('day', now()) + interval '30 days')`,
+      [SECOND_FESTIVAL],
+    )
+    const second = await client.query(
+      `INSERT INTO stages (festival_id, name, latitude, longitude, capacity, sort_order)
+       VALUES ($1, 'Strandpodium', 52.1105, 4.2790, 3000, 1) RETURNING id`,
+      [SECOND_FESTIVAL],
+    )
+    await client.query(
+      `INSERT INTO performances (stage_id, artist, starts_at, ends_at)
+       VALUES ($1, 'Duinpan Disco', date_trunc('day', now()) + interval '20 hours', date_trunc('day', now()) + interval '21 hours')`,
+      [second.rows[0].id],
+    )
+    await client.query(`INSERT INTO map_points (festival_id, kind, name, latitude, longitude) VALUES ($1, 'ehbo', 'EHBO-post strand', 52.1108, 4.2784)`, [
+      SECOND_FESTIVAL,
+    ])
+    for (let i = 1; i <= 10; i++) {
+      await client.query(
+        `INSERT INTO tickets (festival_id, code_hash, valid_from, valid_until) VALUES ($2, $1, now() - interval '1 day', now() + interval '30 days')`,
+        [sha256(`TWEE-${String(i).padStart(4, '0')}`), SECOND_FESTIVAL],
       )
     }
 
     const passwordHash = await hashPassword(DEMO_PASSWORD)
+    // Personeel van het eerste festival. De rol hoort bij het festival, niet bij het account.
     const staff = [
-      { email: 'organisatie@festival.test', name: 'Organisatie', role: 'organisatie' },
       { email: 'beheerder@festival.test', name: 'Beheerder', role: 'beheerder' },
+      { email: 'organisatie@festival.test', name: 'Organisatie', role: 'organisatie' },
+      { email: 'ehbo@festival.test', name: 'EHBO', role: 'ehbo' },
+      { email: 'beveiliging@festival.test', name: 'Beveiliging', role: 'beveiliging' },
     ]
     for (const s of staff) {
-      await client.query('INSERT INTO users (email, password_hash, display_name, role) VALUES ($1, $2, $3, $4)', [
+      const { rows } = await client.query('INSERT INTO users (email, password_hash, display_name) VALUES ($1, $2, $3) RETURNING id', [
         s.email,
         passwordHash,
         s.name,
-        s.role,
       ])
+      await client.query('INSERT INTO festival_members (festival_id, user_id, role) VALUES ($1, $2, $3)', [FIRST_FESTIVAL, rows[0].id, s.role])
     }
+    // Het tweede festival heeft een eigen beheerder, om te testen dat die niet bij het eerste kan
+    const other = await client.query('INSERT INTO users (email, password_hash, display_name) VALUES ($1, $2, $3) RETURNING id', [
+      'beheerder2@festival.test',
+      passwordHash,
+      'Beheerder Twee',
+    ])
+    await client.query(`INSERT INTO festival_members (festival_id, user_id, role) VALUES ($1, $2, 'beheerder')`, [SECOND_FESTIVAL, other.rows[0].id])
+    // Sudo: mag bij elk festival en wijst eigenaren en beheerders aan
+    await client.query(`INSERT INTO users (email, password_hash, display_name, platform_role) VALUES ($1, $2, 'Sudo', 'sudo')`, [
+      'sudo@festival.test',
+      passwordHash,
+    ])
 
     // Twee bezoekers die al vrienden zijn (gebruiken tickets 0049 en 0050)
     const visitors: string[] = []
@@ -112,39 +157,40 @@ export async function seed(databaseUrl: string, log = console.log, { programOnly
       { email: 'anna@festival.test', name: 'Anna', ticket: 'DEMO-0049' },
       { email: 'bram@festival.test', name: 'Bram', ticket: 'DEMO-0050' },
     ].entries()) {
-      const { rows } = await client.query(
-        `UPDATE tickets SET status = 'gekoppeld' WHERE code_hash = $1 RETURNING id`,
-        [sha256(v.ticket)],
-      )
       const user = await client.query(
-        `INSERT INTO users (ticket_id, email, password_hash, display_name, share_location, share_timetable)
-         VALUES ($1, $2, $3, $4, true, true) RETURNING id`,
-        [rows[0].id, v.email, passwordHash, v.name],
+        `INSERT INTO users (email, password_hash, display_name, share_location, share_timetable)
+         VALUES ($1, $2, $3, true, true) RETURNING id`,
+        [v.email, passwordHash, v.name],
       )
+      await client.query(`UPDATE tickets SET status = 'gekoppeld', user_id = $2 WHERE code_hash = $1`, [sha256(v.ticket), user.rows[0].id])
       visitors[i] = user.rows[0].id
     }
     const [a, b] = [visitors[0]!, visitors[1]!].sort()
     await client.query('INSERT INTO friendships (user_a, user_b) VALUES ($1, $2)', [a, b])
     await client.query(
-      `INSERT INTO locations (user_id, latitude, longitude, accuracy_m, expires_at)
-       VALUES ($1, 52.3870, 4.8760, 15, now() + interval '10 minutes')`,
-      [visitors[1]],
+      `INSERT INTO locations (user_id, festival_id, latitude, longitude, accuracy_m, expires_at)
+       VALUES ($1, $2, 52.3870, 4.8760, 15, now() + interval '10 minutes')`,
+      [visitors[1], FIRST_FESTIVAL],
     )
     await client.query(
       `INSERT INTO timetable_entries (user_id, performance_id)
-       SELECT $1, id FROM performances ORDER BY starts_at LIMIT 3`,
-      [visitors[1]],
+       SELECT $1, p.id FROM performances p JOIN stages s ON s.id = p.stage_id
+        WHERE s.festival_id = $2 ORDER BY p.starts_at LIMIT 3`,
+      [visitors[1], FIRST_FESTIVAL],
     )
     await client.query(
-      `INSERT INTO announcements (level, title_nl, title_en, body_nl, body_en)
-       VALUES ('info', 'Welkom!', 'Welcome!', 'Fijn dat je er bent. Drink genoeg water.', 'Great to have you here. Stay hydrated.')`,
+      `INSERT INTO announcements (festival_id, level, title_nl, title_en, body_nl, body_en)
+       VALUES ($1, 'info', 'Welkom!', 'Welcome!', 'Fijn dat je er bent. Drink genoeg water.', 'Great to have you here. Stay hydrated.')`,
+      [FIRST_FESTIVAL],
     )
 
     await client.query('COMMIT')
     log('Demo-data aangemaakt.')
-    log(`  Tickets:      DEMO-0001 t/m DEMO-0048 (vrij om mee te registreren)`)
+    log(`  Festivals:    Testfestival en Tweede Testfestival`)
+    log(`  Tickets:      DEMO-0001 t/m DEMO-0048 (Testfestival), TWEE-0001 t/m TWEE-0010 (Tweede Testfestival)`)
     log(`  Bezoekers:    anna@festival.test, bram@festival.test`)
-    log(`  Portal:       organisatie@festival.test, beheerder@festival.test`)
+    log(`  Portal:       beheerder@, organisatie@, ehbo@, beveiliging@festival.test (Testfestival)`)
+    log(`                beheerder2@festival.test (Tweede Testfestival), sudo@festival.test (alles)`)
     log(`  Wachtwoord:   ${DEMO_PASSWORD}  (alleen lokaal!)`)
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {})

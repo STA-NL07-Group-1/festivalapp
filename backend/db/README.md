@@ -8,20 +8,28 @@ PostgreSQL 16 of nieuwer. Eigenaar: **Bob** (Network & Cloud), review op securit
 |---|---|
 | `migrations/0001_init.sql` | Eerste schema: 17 tabellen, enums, constraints, triggers. **Bron van waarheid.** |
 | `schema.dbml` | Hetzelfde schema als diagram. Plak het in [dbdiagram.io](https://dbdiagram.io). |
-| `constraints-test.sql` | Probeert 24 ongeldige dingen op te slaan en controleert dat de database ze weigert. |
+| `constraints-test.sql` | Probeert 36 ongeldige dingen op te slaan en controleert dat de database ze weigert. |
 | `create-test-db.sql` | Maakt `festivalapp_test` aan als je `docker compose up` gebruikt. |
 
-## De 17 tabellen
+## De 21 tabellen
 
 | Groep | Tabellen |
 |---|---|
+| Festivals en rollen | `festivals`, `festival_members`, `festival_blocks` |
 | Accounts | `tickets`, `users`, `sessions` |
 | Sociaal | `friend_codes`, `friendships`, `locations`, `pins`, `messages` |
 | Programma | `stages`, `performances`, `timetable_entries`, `show_signups`, `crowd_readings` |
-| Organisatie | `push_subscriptions`, `announcements`, `sos_alerts`, `audit_log` |
+| Organisatie | `push_subscriptions`, `announcements`, `sos_alerts`, `map_points`, `audit_log` |
 
-Er is geen tabel `festivals`: één installatie = één festival. Daarnaast houdt `npm run db:migrate`
-in de tabel `schema_migrations` bij welke migraties al gedraaid zijn.
+Sinds migratie 0004 kunnen er meerdere festivals in één installatie staan. Podia, mededelingen,
+SOS-meldingen, kaartpunten, tickets, locaties en pins hebben een `festival_id`; optredens en drukte
+horen via hun podium bij een festival. Vrienden en chats horen bij het account en niet bij een festival.
+
+Rollen staan niet meer in `users`. Wie in `festival_members` staat is personeel van dat festival
+(`beheerder`, `organisatie`, `ehbo` of `beveiliging`); wie alleen een ticket heeft is bezoeker.
+`users.platform_role` is voor de twee rollen over alle festivals heen: `eigenaar` en `sudo`.
+
+Daarnaast houdt `npm run db:migrate` in de tabel `schema_migrations` bij welke migraties al gedraaid zijn.
 
 ## Lokaal draaien
 

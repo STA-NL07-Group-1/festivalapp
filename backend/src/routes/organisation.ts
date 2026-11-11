@@ -1,11 +1,10 @@
 // Pushmeldingen, mededelingen, SOS, beheerportal en systeem.
 import type { Deps } from '../app.ts'
 import { audit } from '../db.ts'
-import { badRequest, notFound, requireUser, uuidParam, type Router } from '../http.ts'
+import { ORGANISERS, STAFF, badRequest, notFound, requireFestival, requireUser, uuidParam, type Router } from '../http.ts'
+import { festivalUserIds } from '../festival.ts'
 import { sha256 } from '../security.ts'
 import { PERFORMANCE_COLUMNS, toAnnouncement, toPerformance, toSos } from './mappers.ts'
-
-const STAFF = ['organisatie', 'beheerder'] as const
 
 export function organisationRoutes(r: Router, deps: Deps): void {
   const { db } = deps
@@ -40,28 +39,31 @@ export function organisationRoutes(r: Router, deps: Deps): void {
   })
 
   // ------------------------------------------------------------- mededelingen
-  r.get('/announcements', { operationId: 'listAnnouncements' }, async () => {
+  r.get('/announcements', { operationId: 'listAnnouncements' }, async (ctx) => {
     const { rows } = await db.query(
-      `SELECT * FROM announcements WHERE expires_at IS NULL OR expires_at > now()
+      `SELECT * FROM announcements WHERE festival_id = $1 AND (expires_at IS NULL OR expires_at > now())
         ORDER BY created_at DESC LIMIT 200`,
+      [requireFestival(ctx)],
     )
     return { status: 200, body: rows.map(toAnnouncement) }
   })
 
-  r.post('/admin/announcements', { operationId: 'createAnnouncement', roles: [...STAFF] }, async (ctx) => {
+  r.post('/admin/announcements', { operationId: 'createAnnouncement', roles: ORGANISERS }, async (ctx) => {
     const user = requireUser(ctx)
+    const festivalId = requireFestival(ctx)
     const b = ctx.body as { level: string; titleNl: string; titleEn: string; bodyNl: string; bodyEn: string; expiresAt?: string }
     if (b.expiresAt && new Date(b.expiresAt) <= new Date()) throw badRequest('De verloopdatum ligt in het verleden.')
     const { rows } = await db.query(
-      `INSERT INTO announcements (author_id, level, title_nl, title_en, body_nl, body_en, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [user.id, b.level, b.titleNl.trim(), b.titleEn.trim(), b.bodyNl.trim(), b.bodyEn.trim(), b.expiresAt ?? null],
+      `INSERT INTO announcements (festival_id, author_id, level, title_nl, title_en, body_nl, body_en, expires_at)
+       VALUES ($8, $1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [user.id, b.level, b.titleNl.trim(), b.titleEn.trim(), b.bodyNl.trim(), b.bodyEn.trim(), b.expiresAt ?? null, festivalId],
     )
     const announcement = toAnnouncement(rows[0]!)
     await audit(db, user.id, 'announcement.create', { type: 'announcement', id: String(announcement.id) }, { level: b.level })
-    deps.realtime.toAll('announcement', announcement)
+    deps.realtime.toFestival(festivalId, 'announcement', announcement)
     if (b.level !== 'info') {
-      void deps.push.toEveryone({
+      // Alleen naar wie bij dit festival hoort: bezoekers met een ticket en het personeel
+      void deps.push.toUsers(await festivalUserIds(db, festivalId), {
         title: b.level === 'nood' ? `⚠️ ${b.titleNl}` : b.titleNl,
         body: b.bodyNl,
         tag: `announcement-${announcement.id}`,
@@ -76,50 +78,55 @@ export function organisationRoutes(r: Router, deps: Deps): void {
   r.post('/sos', { operationId: 'sendSos', rateLimit: { limit: 3, windowMs: 60_000 } }, async (ctx) => {
     const user = requireUser(ctx)
     const b = ctx.body as { latitude?: number; longitude?: number; message?: string }
+    const festivalId = requireFestival(ctx)
     const { rows } = await db.query(
-      'INSERT INTO sos_alerts (user_id, latitude, longitude, message) VALUES ($1, $2, $3, $4) RETURNING *',
-      [user.id, b.latitude ?? null, b.longitude ?? null, b.message?.trim() || null],
+      'INSERT INTO sos_alerts (festival_id, user_id, latitude, longitude, message) VALUES ($5, $1, $2, $3, $4) RETURNING *',
+      [user.id, b.latitude ?? null, b.longitude ?? null, b.message?.trim() || null, festivalId],
     )
     const alert = toSos(rows[0]!)
     await audit(db, user.id, 'sos.create', { type: 'sos_alert', id: String(alert.id) })
-    deps.realtime.toStaff('sos.update', alert)
+    // Naar al het personeel van dit festival: organisatie, EHBO en beveiliging
+    deps.realtime.toStaff(festivalId, 'sos.update', alert)
     return { status: 201, body: alert }
   })
 
-  r.get('/admin/sos', { operationId: 'listSosAlerts', roles: [...STAFF] }, async () => {
+  r.get('/admin/sos', { operationId: 'listSosAlerts', roles: STAFF }, async (ctx) => {
     const { rows } = await db.query(
       `SELECT * FROM sos_alerts
-        WHERE status <> 'afgehandeld' OR resolved_at > now() - interval '2 hours'
+        WHERE festival_id = $1 AND (status <> 'afgehandeld' OR resolved_at > now() - interval '2 hours')
         ORDER BY (status = 'afgehandeld'), created_at
         LIMIT 500`,
+      [requireFestival(ctx)],
     )
     return { status: 200, body: rows.map(toSos) }
   })
 
-  r.patch('/admin/sos/:sosId', { operationId: 'updateSosAlert', roles: [...STAFF] }, async (ctx) => {
+  r.patch('/admin/sos/:sosId', { operationId: 'updateSosAlert', roles: STAFF }, async (ctx) => {
     const user = requireUser(ctx)
+    const festivalId = requireFestival(ctx)
     const { status } = ctx.body as { status: string }
     const { rows } = await db.query(
       `UPDATE sos_alerts
           SET status = $2::sos_status, handled_by = $3,
               resolved_at = CASE WHEN $2::sos_status = 'afgehandeld' THEN coalesce(resolved_at, now()) ELSE NULL END
-        WHERE id = $1 RETURNING *`,
-      [uuidParam(ctx, 'sosId'), status, user.id],
+        WHERE id = $1 AND festival_id = $4 RETURNING *`,
+      [uuidParam(ctx, 'sosId'), status, user.id, festivalId],
     )
     if (!rows[0]) throw notFound()
     const alert = toSos(rows[0])
     await audit(db, user.id, 'sos.update', { type: 'sos_alert', id: String(alert.id) }, { status })
-    deps.realtime.toStaff('sos.update', alert)
+    deps.realtime.toStaff(festivalId, 'sos.update', alert)
     if (alert.userId) deps.realtime.toUser(String(alert.userId), 'sos.update', alert)
     return { status: 200, body: alert }
   })
 
   // ------------------------------------------------------------- timetable beheren
-  r.post('/admin/performances', { operationId: 'createPerformance', roles: [...STAFF] }, async (ctx) => {
+  r.post('/admin/performances', { operationId: 'createPerformance', roles: ORGANISERS }, async (ctx) => {
     const user = requireUser(ctx)
     const b = ctx.body as { stageId: string; artist: string; description?: string; startsAt: string; endsAt: string; signupCapacity?: number }
     if (new Date(b.endsAt) <= new Date(b.startsAt)) throw badRequest('De eindtijd moet na de begintijd liggen.')
-    const stage = await db.query('SELECT 1 FROM stages WHERE id = $1', [b.stageId])
+    const festivalId = requireFestival(ctx)
+    const stage = await db.query('SELECT 1 FROM stages WHERE id = $1 AND festival_id = $2', [b.stageId, festivalId])
     if (!stage.rowCount) throw badRequest('Onbekend podium.')
     const { rows } = await db.query(
       `INSERT INTO performances (stage_id, artist, description, starts_at, ends_at, signup_capacity)
@@ -128,14 +135,19 @@ export function organisationRoutes(r: Router, deps: Deps): void {
     )
     const performance = toPerformance(rows[0]!)
     await audit(db, user.id, 'performance.create', { type: 'performance', id: String(performance.id) })
-    deps.realtime.toAll('timetable.update', performance)
+    deps.realtime.toFestival(festivalId, 'timetable.update', performance)
     return { status: 201, body: performance }
   })
 
-  r.patch('/admin/performances/:performanceId', { operationId: 'updatePerformance', roles: [...STAFF] }, async (ctx) => {
+  r.patch('/admin/performances/:performanceId', { operationId: 'updatePerformance', roles: ORGANISERS }, async (ctx) => {
     const user = requireUser(ctx)
     const id = uuidParam(ctx, 'performanceId')
     const b = ctx.body as Partial<{ stageId: string; startsAt: string; endsAt: string; status: string; description: string }>
+    const festivalId = requireFestival(ctx)
+    // Het optreden en een eventueel nieuw podium moeten allebei bij dit festival horen
+    if (b.stageId && !(await db.query('SELECT 1 FROM stages WHERE id = $1 AND festival_id = $2', [b.stageId, festivalId])).rowCount) {
+      throw badRequest('Ongeldige tijden of podium.')
+    }
     const { rows } = await db.query(
       `UPDATE performances SET
           stage_id    = coalesce($2, stage_id),
@@ -143,8 +155,9 @@ export function organisationRoutes(r: Router, deps: Deps): void {
           ends_at     = coalesce($4, ends_at),
           status      = coalesce($5::performance_status, status),
           description = coalesce($6, description)
-        WHERE id = $1 RETURNING ${PERFORMANCE_COLUMNS}`,
-      [id, b.stageId ?? null, b.startsAt ?? null, b.endsAt ?? null, b.status ?? null, b.description ?? null],
+        WHERE id = $1 AND stage_id IN (SELECT id FROM stages WHERE festival_id = $7)
+        RETURNING ${PERFORMANCE_COLUMNS}`,
+      [id, b.stageId ?? null, b.startsAt ?? null, b.endsAt ?? null, b.status ?? null, b.description ?? null, festivalId],
     ).catch((error: { code?: string }) => {
       // 23514 = CHECK (eindtijd na begintijd), 23503 = onbekend podium
       if (error.code === '23514' || error.code === '23503') throw badRequest('Ongeldige tijden of podium.')
@@ -153,7 +166,7 @@ export function organisationRoutes(r: Router, deps: Deps): void {
     if (!rows[0]) throw notFound()
     const performance = toPerformance(rows[0])
     await audit(db, user.id, 'performance.update', { type: 'performance', id }, b)
-    deps.realtime.toAll('timetable.update', performance)
+    deps.realtime.toFestival(festivalId, 'timetable.update', performance)
 
     // Iedereen die dit optreden in zijn timetable heeft, krijgt een melding
     const fans = await db.query<{ user_id: string }>('SELECT user_id FROM timetable_entries WHERE performance_id = $1', [id])
@@ -179,13 +192,14 @@ export function organisationRoutes(r: Router, deps: Deps): void {
   r.post('/admin/tickets/import', { operationId: 'importTickets', roles: ['beheerder'] }, async (ctx) => {
     const user = requireUser(ctx)
     const { tickets } = ctx.body as { tickets: { code: string; ticketType?: string; validFrom: string; validUntil: string }[] }
+    const festivalId = requireFestival(ctx)
     let imported = 0
     for (const t of tickets) {
       if (new Date(t.validUntil) <= new Date(t.validFrom)) continue
       const { rowCount } = await db.query(
-        `INSERT INTO tickets (code_hash, ticket_type, valid_from, valid_until) VALUES ($1, $2, $3, $4)
+        `INSERT INTO tickets (festival_id, code_hash, ticket_type, valid_from, valid_until) VALUES ($5, $1, $2, $3, $4)
          ON CONFLICT (code_hash) DO NOTHING`,
-        [sha256(t.code.trim().toUpperCase()), t.ticketType ?? 'weekend', t.validFrom, t.validUntil],
+        [sha256(t.code.trim().toUpperCase()), t.ticketType ?? 'weekend', t.validFrom, t.validUntil, festivalId],
       )
       imported += rowCount ?? 0
     }

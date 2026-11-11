@@ -165,6 +165,27 @@ label {
 .brand img {
   border-radius: 8px;
 }
+/* Welk festival beheer je nu? Staat bovenaan het menu. */
+.festival-switch {
+  display: grid;
+  gap: 4px;
+}
+.festival-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #c9c1e0;
+}
+.festival-switch select {
+  background: #1d1436;
+  color: #f4f0ff;
+  border-color: #8d83ab;
+}
+.festival-switch .error {
+  color: #ffb4bd;
+  font-size: 0.85rem;
+  margin: 0;
+}
 .sidebar nav {
   display: grid;
   gap: 4px;
@@ -517,4 +538,19 @@ details summary {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Team en eigenaren */
+.role-help {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+}
+.owner-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }

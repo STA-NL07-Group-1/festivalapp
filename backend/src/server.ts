@@ -2,6 +2,7 @@
 import { createApp, createHttpServer } from './app.ts'
 import { loadConfig } from './config.ts'
 import { createPool } from './db.ts'
+import { resolveSocket } from './festival.ts'
 import { createPush } from './push.ts'
 import { attachRealtime } from './realtime.ts'
 
@@ -10,7 +11,11 @@ const db = createPool(config.databaseUrl)
 const push = createPush(db, config.vapid)
 const { handler, deps } = createApp({ db, config, push })
 const server = createHttpServer(handler)
-deps.realtime = attachRealtime(server, { jwtSecret: config.jwtSecret, corsOrigins: config.corsOrigins })
+deps.realtime = attachRealtime(server, {
+  jwtSecret: config.jwtSecret,
+  corsOrigins: config.corsOrigins,
+  resolve: (userId, festivalId) => resolveSocket(db, userId, festivalId),
+})
 
 // Privacy: verlopen locaties en vriendcodes elke minuut opruimen
 const cleanup = setInterval(() => {

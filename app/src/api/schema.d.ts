@@ -667,7 +667,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Zoek gebruikers (maximaal 100) */
+        /** Zoek bezoekers van dit festival (maximaal 100) */
         get: operations["listUsers"];
         put?: never;
         post?: never;
@@ -694,7 +694,9 @@ export interface paths {
         head?: never;
         /**
          * Wijzig het tickettype of blokkeer een bezoeker
-         * @description Alleen bezoekers. Blokkeren logt de bezoeker direct uit; een geblokkeerd account kan niet meer inloggen.
+         * @description Alleen bezoekers met een ticket van dit festival. Een blokkade geldt standaard alleen voor
+         *     dit festival (`blockScope: festival`). Alleen een eigenaar of sudo kan iemand voor alle
+         *     festivals blokkeren (`blockScope: alle`); dat account wordt direct uitgelogd en kan niet meer inloggen.
          */
         patch: operations["updateUser"];
         trace?: never;
@@ -714,6 +716,161 @@ export interface paths {
          */
         post: operations["importTickets"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/festivals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Festivals waar je bij mag
+         * @description Bezoekers zien de festivals waar ze een ticket voor hebben en die nog niet zijn afgelopen.
+         *     Personeel ziet de festivals waar het een rol heeft; eigenaren en sudo zien alles.
+         *     Het eerste festival in de lijst is het festival dat de server kiest als je geen `X-Festival-Id` meestuurt.
+         */
+        get: operations["listMyFestivals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Voeg een ticket toe aan je account
+         * @description Het ticket bepaalt bij welk festival je erbij komt. Hoogstens één ticket per festival.
+         */
+        post: operations["addMyTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/festivals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Maak een festival aan */
+        post: operations["createFestival"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/festival": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Wijzig de naam of de datums van dit festival */
+        patch: operations["updateFestival"];
+        trace?: never;
+    };
+    "/admin/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Het personeel van dit festival */
+        get: operations["listTeam"];
+        /**
+         * Geef iemand een rol bij dit festival
+         * @description Wie welke rol mag uitdelen: `beheerder` alleen sudo; `organisatie` een beheerder (of eigenaar);
+         *     `ehbo` en `beveiliging` ook de organisatie. Bestaat er nog geen account met dit e-mailadres,
+         *     dan wordt het aangemaakt met de opgegeven naam en het tijdelijke wachtwoord.
+         */
+        put: operations["setTeamMember"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/team/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Haal iemand uit het team van dit festival */
+        delete: operations["removeTeamMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/owners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Eigenaren van het platform */
+        get: operations["listOwners"];
+        /** Maak een bestaand account eigenaar */
+        put: operations["addOwner"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/owners/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Haal de rol eigenaar weg */
+        delete: operations["removeOwner"];
         options?: never;
         head?: never;
         patch?: never;
@@ -772,8 +929,15 @@ export interface components {
             /** @description Seconden tot het access-token verloopt */
             expiresIn: number;
         };
+        /**
+         * @description Rol in het festival van dit verzoek. Wie alleen een ticket heeft is bezoeker.
+         * @enum {string}
+         */
+        Role: "bezoeker" | "beheerder" | "organisatie" | "ehbo" | "beveiliging";
         /** @enum {string} */
-        Role: "bezoeker" | "organisatie" | "beheerder";
+        FestivalRole: "beheerder" | "organisatie" | "ehbo" | "beveiliging";
+        /** @enum {string} */
+        PlatformRole: "eigenaar" | "sudo";
         /** @enum {string} */
         Theme: "systeem" | "licht" | "donker";
         /** @enum {string} */
@@ -785,6 +949,12 @@ export interface components {
             email: string;
             displayName: string;
             role: components["schemas"]["Role"];
+            platformRole: components["schemas"]["PlatformRole"] | null;
+            /**
+             * Format: uuid
+             * @description Het festival van dit verzoek; null als je (nog) bij geen festival hoort
+             */
+            festivalId: string | null;
             theme: components["schemas"]["Theme"];
             locale: components["schemas"]["Locale"];
             shareLocation: boolean;
@@ -881,10 +1051,13 @@ export interface components {
             id: string;
             email: string;
             displayName: string;
-            /** @enum {string} */
-            role: "bezoeker" | "organisatie" | "beheerder";
             ticketType: string | null;
             blocked: boolean;
+            /**
+             * @description festival = alleen dit festival, alle = alle festivals
+             * @enum {string|null}
+             */
+            blockScope: "festival" | "alle" | null;
             blockedReason: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -893,6 +1066,69 @@ export interface components {
             ticketType?: components["schemas"]["TicketType"];
             blocked?: boolean;
             blockedReason?: string;
+            /**
+             * @description Standaard festival. "alle" mag alleen een eigenaar of sudo.
+             * @enum {string}
+             */
+            blockScope?: "festival" | "alle";
+        };
+        Festival: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            role: components["schemas"]["Role"];
+            /** @description Het festival is nu bezig */
+            active: boolean;
+        };
+        CreateFestival: {
+            name: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+        };
+        UpdateFestival: {
+            name?: string;
+            /** Format: date-time */
+            startsAt?: string;
+            /** Format: date-time */
+            endsAt?: string;
+        };
+        AddTicket: {
+            ticketCode: string;
+        };
+        TeamMember: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+            role: components["schemas"]["FestivalRole"];
+            /** Format: date-time */
+            addedAt: string;
+        };
+        SetTeamMember: {
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["FestivalRole"];
+            /** @description Alleen nodig als er nog geen account met dit e-mailadres is */
+            displayName?: string;
+            /** @description Tijdelijk wachtwoord; alleen nodig als er nog geen account is */
+            password?: string;
+        };
+        Owner: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+            platformRole: components["schemas"]["PlatformRole"];
+        };
+        AddOwner: {
+            /** Format: email */
+            email: string;
         };
         /** @enum {string} */
         MapPointKind: "wifi" | "ehbo" | "water" | "toilet" | "ingang" | "uitgang" | "eten" | "activiteit" | "oplaadpunt" | "info";
@@ -1339,6 +1575,8 @@ export interface operations {
                      *       "email": "anna@example.org",
                      *       "displayName": "Anna",
                      *       "role": "bezoeker",
+                     *       "platformRole": null,
+                     *       "festivalId": "00000000-0000-4000-8000-000000000001",
                      *       "theme": "systeem",
                      *       "locale": "nl",
                      *       "shareLocation": true,
@@ -2664,6 +2902,264 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listMyFestivals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Festivals, het meest logische eerst */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Festival"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    addMyTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddTicket"];
+            };
+        };
+        responses: {
+            /** @description Toegevoegd; je festivals */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Festival"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Ticket onbekend, al gebruikt of verlopen, of je hebt al een ticket voor dit festival */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    createFestival: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFestival"];
+            };
+        };
+        responses: {
+            /** @description Aangemaakt */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Festival"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateFestival: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFestival"];
+            };
+        };
+        responses: {
+            /** @description Gewijzigd */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Festival"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Teamleden */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMember"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    setTeamMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetTeamMember"];
+            };
+        };
+        responses: {
+            /** @description Opgeslagen */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMember"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    removeTeamMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verwijderd uit het team (het account blijft bestaan) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listOwners: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eigenaren en sudo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Owner"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    addOwner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddOwner"];
+            };
+        };
+        responses: {
+            /** @description Opgeslagen */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Owner"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    removeOwner: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Geen eigenaar meer (het account blijft bestaan) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     postCrowdReading: {

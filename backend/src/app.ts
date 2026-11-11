@@ -7,6 +7,8 @@ import {
   HttpError,
   RateLimiter,
   Router,
+  UUID_RE,
+  badRequest,
   forbidden,
   readJsonBody,
   sendJson,
@@ -14,6 +16,7 @@ import {
   unauthorized,
   type Context,
 } from './http.ts'
+import { loadAccess, pickFestival } from './festival.ts'
 import type { Push } from './push.ts'
 import { noRealtime, type Realtime } from './realtime.ts'
 import { sha256, verifyAccessToken } from './security.ts'
@@ -59,7 +62,7 @@ export function createApp(deps: Omit<Deps, 'realtime' | 'limiter'> & Partial<Pic
     if (origin && fullDeps.config.corsOrigins.includes(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin)
       res.setHeader('Vary', 'Origin')
-      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Device-Key')
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Device-Key, X-Festival-Id')
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE')
       res.setHeader('Access-Control-Max-Age', '600')
     }
@@ -74,7 +77,7 @@ export function createApp(deps: Omit<Deps, 'realtime' | 'limiter'> & Partial<Pic
     const { route, params } = match
     const ip = clientIp(req)
 
-    const ctx: Context = { req, res, params, query: url.searchParams, body: undefined, user: null, deviceId: null, ip }
+    const ctx: Context = { req, res, params, query: url.searchParams, body: undefined, user: null, festivalId: null, deviceId: null, ip }
 
     // Authenticatie
     const auth = route.auth ?? 'user'
@@ -82,12 +85,22 @@ export function createApp(deps: Omit<Deps, 'realtime' | 'limiter'> & Partial<Pic
     if (auth === 'user') {
       const token = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? '')?.[1]
       if (!token) throw unauthorized()
+      let userId: string
       try {
-        const user = await verifyAccessToken(token, fullDeps.config.jwtSecret)
-        ctx.user = { id: user.id, role: user.role }
+        userId = (await verifyAccessToken(token, fullDeps.config.jwtSecret)).id
       } catch {
         throw unauthorized()
       }
+      // Rol en festival komen uit de database, niet uit het token: zo werkt een nieuwe rol,
+      // een blokkade of een afgelopen festival direct
+      const access = await loadAccess(fullDeps.db, userId)
+      if (!access || access.blocked) throw unauthorized()
+      const header = req.headers['x-festival-id']
+      const requested = typeof header === 'string' && header ? header : null
+      if (requested && !UUID_RE.test(requested)) throw badRequest('Onbekend festival.')
+      const festival = pickFestival(access, requested)
+      ctx.festivalId = festival?.id ?? null
+      ctx.user = { id: userId, role: festival?.role ?? 'bezoeker', platformRole: access.platformRole }
       // eslint-disable-next-line security/detect-possible-timing-attacks -- idem; de sleutel zelf wordt gehasht vergeleken
     } else if (auth === 'iot') {
       const key = req.headers['x-device-key']
@@ -108,7 +121,8 @@ export function createApp(deps: Omit<Deps, 'realtime' | 'limiter'> & Partial<Pic
     }
 
     // Autorisatie
-    if (route.roles && (!ctx.user || !route.roles.includes(ctx.user.role))) throw forbidden()
+    if (route.roles && (!ctx.user || !ctx.festivalId || !route.roles.includes(ctx.user.role))) throw forbidden()
+    if (route.platform && (!ctx.user?.platformRole || !route.platform.includes(ctx.user.platformRole))) throw forbidden()
 
     ctx.body = await readJsonBody(req)
     validateBody(route.operationId, ctx.body)

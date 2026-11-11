@@ -44,7 +44,16 @@ sudo docker compose -f compose.prod.yaml --env-file .env.production exec backend
 sudo docker compose -f compose.prod.yaml --env-file .env.production exec \
   -e ADMIN_EMAIL=jij@example.com -e ADMIN_NAME="Gijs" -e ADMIN_ROLE=beheerder -e ADMIN_PASSWORD='kies-een-sterk-wachtwoord' \
   backend node scripts/create-admin.ts
+
+# Eén account "sudo" maken: dat mag bij elk festival en wijst eigenaren en beheerders aan.
+# Het account moet al bestaan. Dit kan bewust alleen hier, niet via het portal.
+sudo docker compose -f compose.prod.yaml --env-file .env.production exec \
+  -e SUDO_EMAIL=jij@example.com backend node scripts/set-sudo.ts
 ```
+
+De rol bij `create-admin.ts` (`beheerder`, `organisatie`, `ehbo` of `beveiliging`) geldt voor één
+festival: standaard het eerste, of het festival waarvan je de id meegeeft met `-e ADMIN_FESTIVAL=...`.
+Verdere teamleden voeg je toe in het portal, op de pagina Team.
 
 Daarna: tickets importeren via `https://festivalapp.nulllabx.com/beheer` → Tickets.
 

@@ -2,11 +2,23 @@
 // weinig dependencies, en alles wat met beveiliging te maken heeft staat hier op één plek.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-export type Role = 'bezoeker' | 'organisatie' | 'beheerder'
+/** Rol binnen één festival */
+export type FestivalRole = 'beheerder' | 'organisatie' | 'ehbo' | 'beveiliging'
+/** Rol in het festival van dit verzoek. Wie alleen een ticket heeft, is bezoeker. */
+export type Role = 'bezoeker' | FestivalRole
+/** Rol over alle festivals heen */
+export type PlatformRole = 'eigenaar' | 'sudo'
+
+/** Iedereen die in het beheerportal mag */
+export const STAFF: Role[] = ['beheerder', 'organisatie', 'ehbo', 'beveiliging']
+/** Wie het programma, de kaart en de bezoekers van een festival beheert */
+export const ORGANISERS: Role[] = ['beheerder', 'organisatie']
 
 export interface AuthUser {
   id: string
+  /** Rol in het festival van dit verzoek */
   role: Role
+  platformRole: PlatformRole | null
 }
 
 export interface Context {
@@ -16,6 +28,8 @@ export interface Context {
   query: URLSearchParams
   body: unknown
   user: AuthUser | null
+  /** Het festival van dit verzoek; null als de gebruiker (nog) bij geen enkel festival hoort */
+  festivalId: string | null
   deviceId: string | null
   ip: string
 }
@@ -33,7 +47,10 @@ export interface RouteOptions {
   operationId: string
   /** 'user' (standaard), 'none' of 'iot' */
   auth?: 'user' | 'none' | 'iot'
+  /** Rol in het festival van dit verzoek */
   roles?: Role[]
+  /** Alleen voor deze rollen over alle festivals heen (eigenaar, sudo) */
+  platform?: PlatformRole[]
   /** Rate limit: maximaal `limit` verzoeken per `windowMs`, per gebruiker of IP */
   rateLimit?: { limit: number; windowMs: number }
 }
@@ -179,4 +196,9 @@ export function uuidParam(ctx: Context, name: string): string {
 export function requireUser(ctx: Context): AuthUser {
   if (!ctx.user) throw unauthorized()
   return ctx.user
+}
+
+export function requireFestival(ctx: Context): string {
+  if (!ctx.festivalId) throw forbidden('Je hoort nog bij geen festival. Voeg eerst een ticket toe.')
+  return ctx.festivalId
 }

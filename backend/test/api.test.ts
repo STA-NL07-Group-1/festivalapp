@@ -9,10 +9,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp, createHttpServer } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 import { createPool } from '../src/db.ts'
+import { resolveSocket } from '../src/festival.ts'
 import { createPush } from '../src/push.ts'
 import { attachRealtime } from '../src/realtime.ts'
 import { migrate } from '../scripts/migrate.ts'
-import { DEMO_PASSWORD, seed } from '../scripts/seed.ts'
+import { DEMO_PASSWORD, FIRST_FESTIVAL, SECOND_FESTIVAL, seed } from '../scripts/seed.ts'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const IOT_KEY = 'sensor-geheim-voor-tests'
@@ -42,7 +43,11 @@ beforeAll(async () => {
   const db = createPool(databaseUrl)
   const { handler, deps } = createApp({ db, config, push: createPush(db, null) })
   const server = createHttpServer(handler)
-  deps.realtime = attachRealtime(server, { jwtSecret: config.jwtSecret, corsOrigins: config.corsOrigins })
+  deps.realtime = attachRealtime(server, {
+    jwtSecret: config.jwtSecret,
+    corsOrigins: config.corsOrigins,
+    resolve: (userId, festivalId) => resolveSocket(db, userId, festivalId),
+  })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   close = async () => {
@@ -62,10 +67,15 @@ interface Res<T = any> {
   headers: Headers
 }
 
-async function api<T = any>(method: string, path: string, options: { token?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<Res<T>> {
+async function api<T = any>(
+  method: string,
+  path: string,
+  options: { token?: string; body?: unknown; headers?: Record<string, string>; festival?: string } = {},
+): Promise<Res<T>> {
   // Elk verzoek een eigen "IP", zodat de rate limits per IP de andere tests niet raken
   const headers: Record<string, string> = { 'X-Forwarded-For': `10.0.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`, ...options.headers }
   if (options.token) headers.Authorization = `Bearer ${options.token}`
+  if (options.festival) headers['X-Festival-Id'] = options.festival
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
   const res = await fetch(base + path, {
     method,
@@ -126,7 +136,7 @@ describe.skipIf(!databaseUrl)('backend', () => {
     it('registreren met een geldig ticket', async () => {
       const user = await register('Charlie')
       const me = await api('GET', '/me', { token: user.accessToken })
-      expect(me.body).toMatchObject({ displayName: 'Charlie', role: 'bezoeker', shareLocation: false, shareTimetable: false })
+      expect(me.body).toMatchObject({ displayName: 'Charlie', role: 'bezoeker', platformRole: null, festivalId: FIRST_FESTIVAL, shareLocation: false, shareTimetable: false })
       expect(me.body).not.toHaveProperty('passwordHash')
     })
 
@@ -379,6 +389,7 @@ describe.skipIf(!databaseUrl)('backend', () => {
     })
 
     it('alleen een beheerder mag tickets importeren', async () => {
+      // (van dit festival; de tickets horen dan ook bij dit festival)
       const org = await login('organisatie@festival.test')
       const admin = await login('beheerder@festival.test')
       const body = { tickets: [{ code: 'IMPORT-0001', validFrom: '2026-01-01T00:00:00Z', validUntil: '2030-01-01T00:00:00Z' }] }
@@ -400,29 +411,238 @@ describe.skipIf(!databaseUrl)('backend', () => {
       expect(updated.body).toMatchObject({ ticketType: 'vip', blocked: false })
     })
 
-    it('blokkeren logt uit en houdt inloggen tegen; deblokkeren maakt het weer mogelijk', async () => {
+    it('blokkeren voor dit festival: geen toegang meer tot het festival, wel tot het account', async () => {
       const admin = await login('beheerder@festival.test')
       const visitor = await register('Lastpak')
       const noReason = await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: true } })
       expect(noReason.status).toBe(400)
-      const blocked = await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: true, blockedReason: 'Incident op het terrein' } })
-      expect(blocked.body).toMatchObject({ blocked: true, blockedReason: 'Incident op het terrein' })
+      const blocked = await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: true, blockedReason: 'Te dronken' } })
+      expect(blocked.body).toMatchObject({ blocked: true, blockScope: 'festival', blockedReason: 'Te dronken' })
 
-      expect((await api('POST', '/auth/refresh', { body: { refreshToken: visitor.refreshToken } })).status).toBe(401)
-      const again = await api('POST', '/auth/login', { body: { email: 'lastpak@test.nl', password: 'een-heel-sterk-wachtwoord' } })
-      expect(again.status).toBe(403)
+      // Inloggen en vrienden blijven werken, het festival zelf niet meer
+      const tokens = await login('lastpak@test.nl', 'een-heel-sterk-wachtwoord')
+      expect((await api('GET', '/festivals', { token: tokens.accessToken })).body).toEqual([])
+      expect((await api('GET', '/friends', { token: tokens.accessToken })).status).toBe(200)
+      expect((await api('GET', '/stages', { token: tokens.accessToken })).status).toBe(403)
 
-      await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: false } })
-      await login('lastpak@test.nl', 'een-heel-sterk-wachtwoord')
+      const unblocked = await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: false } })
+      expect(unblocked.body).toMatchObject({ blocked: false, blockScope: null })
+      expect((await api('GET', '/stages', { token: tokens.accessToken })).status).toBe(200)
     })
 
-    it('alleen een beheerder, en alleen bezoekers', async () => {
-      const org = await login('organisatie@festival.test')
-      expect((await api('GET', '/admin/users', { token: org.accessToken })).status).toBe(403)
+    it('blokkeren voor alle festivals kan alleen de eigenaar; dat logt uit en houdt inloggen tegen', async () => {
       const admin = await login('beheerder@festival.test')
-      const staff = await api('GET', '/admin/users?q=organisatie@', { token: admin.accessToken })
-      const res = await api('PATCH', `/admin/users/${staff.body[0].id}`, { token: admin.accessToken, body: { blocked: true, blockedReason: 'Test' } })
+      const sudo = await login('sudo@festival.test')
+      const visitor = await register('Gevaar')
+      const body = { blocked: true, blockedReason: 'Incident op het terrein', blockScope: 'alle' }
+      expect((await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body })).status).toBe(403)
+      const blocked = await api('PATCH', `/admin/users/${visitor.id}`, { token: sudo.accessToken, festival: FIRST_FESTIVAL, body })
+      expect(blocked.body).toMatchObject({ blocked: true, blockScope: 'alle' })
+
+      // Ook het access-token dat de bezoeker nog had werkt direct niet meer
+      expect((await api('GET', '/me', { token: visitor.accessToken })).status).toBe(401)
+      expect((await api('POST', '/auth/refresh', { body: { refreshToken: visitor.refreshToken } })).status).toBe(401)
+      const again = await api('POST', '/auth/login', { body: { email: 'gevaar@test.nl', password: 'een-heel-sterk-wachtwoord' } })
+      expect(again.status).toBe(403)
+
+      // Een beheerder van één festival kan deze blokkade niet opheffen, de eigenaar wel
+      expect((await api('PATCH', `/admin/users/${visitor.id}`, { token: admin.accessToken, body: { blocked: false } })).status).toBe(403)
+      expect((await api('PATCH', `/admin/users/${visitor.id}`, { token: sudo.accessToken, festival: FIRST_FESTIVAL, body: { blocked: false } })).status).toBe(200)
+      await login('gevaar@test.nl', 'een-heel-sterk-wachtwoord')
+    })
+
+    it('organisatie mag bezoekers beheren, EHBO niet; personeel staat er niet tussen', async () => {
+      const ehbo = await login('ehbo@festival.test')
+      expect((await api('GET', '/admin/users', { token: ehbo.accessToken })).status).toBe(403)
+      const org = await login('organisatie@festival.test')
+      const staff = await api('GET', '/admin/users?q=beheerder@', { token: org.accessToken })
+      expect(staff.status).toBe(200)
+      expect(staff.body).toEqual([])
+      const admin = await login('beheerder@festival.test')
+      const me = await api('GET', '/me', { token: admin.accessToken })
+      const res = await api('PATCH', `/admin/users/${me.body.id}`, { token: org.accessToken, body: { blocked: true, blockedReason: 'Test' } })
+      expect(res.status).toBe(404)
+    })
+  })
+
+  describe('meerdere festivals en rollen', () => {
+    it('elk festival heeft zijn eigen programma en kaart', async () => {
+      const visitor = await register('Twee')
+      const before = await api('GET', '/festivals', { token: visitor.accessToken })
+      expect(before.body.map((f: { id: string }) => f.id)).toEqual([FIRST_FESTIVAL])
+      // Zonder ticket geen toegang tot het andere festival
+      expect((await api('GET', '/stages', { token: visitor.accessToken, festival: SECOND_FESTIVAL })).status).toBe(403)
+
+      const added = await api('POST', '/me/tickets', { token: visitor.accessToken, body: { ticketCode: 'twee-0001' } })
+      expect(added.status).toBe(201)
+      expect(added.body.map((f: { id: string; role: string }) => [f.id, f.role]).sort()).toEqual(
+        [
+          [FIRST_FESTIVAL, 'bezoeker'],
+          [SECOND_FESTIVAL, 'bezoeker'],
+        ].sort(),
+      )
+      // Hetzelfde ticket nog een keer, of een tweede ticket voor hetzelfde festival: geweigerd
+      expect((await api('POST', '/me/tickets', { token: visitor.accessToken, body: { ticketCode: 'TWEE-0001' } })).status).toBe(409)
+      expect((await api('POST', '/me/tickets', { token: visitor.accessToken, body: { ticketCode: 'TWEE-0002' } })).status).toBe(409)
+
+      const first = await api('GET', '/stages', { token: visitor.accessToken, festival: FIRST_FESTIVAL })
+      const second = await api('GET', '/stages', { token: visitor.accessToken, festival: SECOND_FESTIVAL })
+      expect(first.body).toHaveLength(4)
+      expect(second.body.map((s: { name: string }) => s.name)).toEqual(['Strandpodium'])
+      const points = await api('GET', '/map-points', { token: visitor.accessToken, festival: SECOND_FESTIVAL })
+      expect(points.body.map((p: { name: string }) => p.name)).toEqual(['EHBO-post strand'])
+      // Een optreden van het ene festival kun je niet via het andere festival in je timetable zetten
+      const perf = (await api('GET', '/performances', { token: visitor.accessToken, festival: SECOND_FESTIVAL })).body[0]
+      expect((await api('PUT', `/me/timetable/${perf.id}`, { token: visitor.accessToken, festival: FIRST_FESTIVAL })).status).toBe(404)
+    })
+
+    it('vrienden zien elkaars locatie alleen op hetzelfde festival', async () => {
+      const a = await register('Hier')
+      const b = await register('Daar')
+      await befriend(a, b)
+      await api('POST', '/me/tickets', { token: a.accessToken, body: { ticketCode: 'TWEE-0003' } })
+      await api('POST', '/me/tickets', { token: b.accessToken, body: { ticketCode: 'TWEE-0004' } })
+      await api('PATCH', '/me', { token: a.accessToken, body: { shareLocation: true } })
+      const put = await api('PUT', '/me/location', { token: a.accessToken, festival: SECOND_FESTIVAL, body: { latitude: 52.11, longitude: 4.28 } })
+      expect(put.status).toBe(204)
+      expect((await api('GET', '/friends/locations', { token: b.accessToken, festival: FIRST_FESTIVAL })).body).toEqual([])
+      expect((await api('GET', '/friends/locations', { token: b.accessToken, festival: SECOND_FESTIVAL })).body).toHaveLength(1)
+    })
+
+    it('een afgelopen festival is voor bezoekers niet meer te zien', async () => {
+      const visitor = await register('Laat')
+      await api('POST', '/me/tickets', { token: visitor.accessToken, body: { ticketCode: 'TWEE-0005' } })
+      const admin2 = await login('beheerder2@festival.test')
+      const ended = await api('PATCH', '/admin/festival', {
+        token: admin2.accessToken,
+        body: { startsAt: '2020-01-01T00:00:00Z', endsAt: '2020-01-03T00:00:00Z' },
+      })
+      expect(ended.status).toBe(200)
+      expect(ended.body.active).toBe(false)
+      try {
+        const list = await api('GET', '/festivals', { token: visitor.accessToken })
+        expect(list.body.map((f: { id: string }) => f.id)).toEqual([FIRST_FESTIVAL])
+        expect((await api('GET', '/map-points', { token: visitor.accessToken, festival: SECOND_FESTIVAL })).status).toBe(403)
+        // De beheerder kan er nog wel bij
+        expect((await api('GET', '/map-points', { token: admin2.accessToken })).status).toBe(200)
+      } finally {
+        await api('PATCH', '/admin/festival', {
+          token: admin2.accessToken,
+          body: { startsAt: new Date(Date.now() - 3_600_000).toISOString(), endsAt: new Date(Date.now() + 30 * 86_400_000).toISOString() },
+        })
+      }
+    })
+
+    it('een beheerder kan niet bij een ander festival', async () => {
+      const admin2 = await login('beheerder2@festival.test')
+      expect((await api('GET', '/me', { token: admin2.accessToken })).body).toMatchObject({ role: 'beheerder', festivalId: SECOND_FESTIVAL })
+      expect((await api('GET', '/admin/users', { token: admin2.accessToken, festival: FIRST_FESTIVAL })).status).toBe(403)
+      // Bezoekers van het eerste festival staan niet in de lijst van het tweede
+      const users = await api('GET', '/admin/users?q=anna', { token: admin2.accessToken })
+      expect(users.body).toEqual([])
+      // Een kaartpunt van het andere festival wijzigen kan niet
+      const admin1 = await login('beheerder@festival.test')
+      const point = (await api('GET', '/map-points', { token: admin1.accessToken })).body[0]
+      expect((await api('PATCH', `/admin/map-points/${point.id}`, { token: admin2.accessToken, body: { name: 'Gekaapt' } })).status).toBe(404)
+    })
+
+    it('EHBO ziet SOS-meldingen maar beheert verder niets', async () => {
+      const ehbo = await login('ehbo@festival.test')
+      expect((await api('GET', '/me', { token: ehbo.accessToken })).body.role).toBe('ehbo')
+      expect((await api('GET', '/admin/sos', { token: ehbo.accessToken })).status).toBe(200)
+      const res = await api('POST', '/admin/announcements', {
+        token: ehbo.accessToken,
+        body: { level: 'info', titleNl: 'Nep', titleEn: 'Fake', bodyNl: 'Nep', bodyEn: 'Fake' },
+      })
       expect(res.status).toBe(403)
+      expect((await api('GET', '/admin/team', { token: ehbo.accessToken })).status).toBe(403)
+    })
+
+    it('wie welke rol mag uitdelen', async () => {
+      const org = await login('organisatie@festival.test')
+      const admin = await login('beheerder@festival.test')
+      const sudo = await login('sudo@festival.test')
+      const nieuw = { email: 'nieuw@festival.test', displayName: 'Nieuw', password: 'een-heel-sterk-wachtwoord' }
+
+      // Organisatie: wel EHBO en beveiliging, geen organisatie
+      expect((await api('PUT', '/admin/team', { token: org.accessToken, body: { ...nieuw, role: 'organisatie' } })).status).toBe(403)
+      // Nieuw account zonder naam en wachtwoord: uitleg wat er nodig is
+      expect((await api('PUT', '/admin/team', { token: org.accessToken, body: { email: nieuw.email, role: 'ehbo' } })).status).toBe(400)
+      const added = await api('PUT', '/admin/team', { token: org.accessToken, body: { ...nieuw, role: 'ehbo' } })
+      expect(added.status).toBe(200)
+      expect(added.body).toMatchObject({ email: nieuw.email, role: 'ehbo' })
+      const fresh = await login(nieuw.email, nieuw.password)
+      expect((await api('GET', '/me', { token: fresh.accessToken })).body).toMatchObject({ role: 'ehbo', festivalId: FIRST_FESTIVAL })
+
+      // Beheerder: wel organisatie, geen beheerder. Dat kan alleen sudo.
+      expect((await api('PUT', '/admin/team', { token: admin.accessToken, body: { email: nieuw.email, role: 'organisatie' } })).status).toBe(200)
+      expect((await api('PUT', '/admin/team', { token: admin.accessToken, body: { email: nieuw.email, role: 'beheerder' } })).status).toBe(403)
+      // De organisatie kan iemand met dezelfde rol niet terugzetten of weghalen
+      expect((await api('PUT', '/admin/team', { token: org.accessToken, body: { email: nieuw.email, role: 'ehbo' } })).status).toBe(403)
+      expect((await api('DELETE', `/admin/team/${added.body.userId}`, { token: org.accessToken })).status).toBe(403)
+      const promoted = await api('PUT', '/admin/team', { token: sudo.accessToken, festival: FIRST_FESTIVAL, body: { email: nieuw.email, role: 'beheerder' } })
+      expect(promoted.body.role).toBe('beheerder')
+      expect((await api('DELETE', `/admin/team/${added.body.userId}`, { token: admin.accessToken })).status).toBe(403)
+      expect((await api('DELETE', `/admin/team/${added.body.userId}`, { token: sudo.accessToken, festival: FIRST_FESTIVAL })).status).toBe(204)
+      // Uit het team: geen toegang meer tot het portal
+      expect((await api('GET', '/admin/sos', { token: fresh.accessToken })).status).toBe(403)
+    })
+
+    it('alleen sudo beheert de eigenaren; een eigenaar mag bij elk festival en maakt festivals aan', async () => {
+      const admin = await login('beheerder@festival.test')
+      const sudo = await login('sudo@festival.test')
+      expect((await api('GET', '/me', { token: sudo.accessToken })).body).toMatchObject({ role: 'beheerder', platformRole: 'sudo' })
+      expect((await api('GET', '/admin/owners', { token: admin.accessToken })).status).toBe(403)
+      expect((await api('POST', '/admin/festivals', { token: admin.accessToken, body: { name: 'Nep', startsAt: '2027-06-01T10:00:00Z', endsAt: '2027-06-03T23:00:00Z' } })).status).toBe(403)
+
+      const owner = await register('Baas')
+      const made = await api('PUT', '/admin/owners', { token: sudo.accessToken, body: { email: 'baas@test.nl' } })
+      expect(made.body).toMatchObject({ userId: owner.id, platformRole: 'eigenaar' })
+      const festivals = await api('GET', '/festivals', { token: owner.accessToken })
+      expect(festivals.body.every((f: { role: string }) => f.role === 'beheerder')).toBe(true)
+      expect(festivals.body.length).toBeGreaterThanOrEqual(2)
+      // Een eigenaar mag geen eigenaren of beheerders aanwijzen
+      expect((await api('PUT', '/admin/owners', { token: owner.accessToken, body: { email: 'anna@festival.test' } })).status).toBe(403)
+      expect((await api('PUT', '/admin/team', { token: owner.accessToken, festival: FIRST_FESTIVAL, body: { email: 'anna@festival.test', role: 'beheerder' } })).status).toBe(403)
+
+      const created = await api('POST', '/admin/festivals', {
+        token: owner.accessToken,
+        body: { name: 'Zomerfestival', startsAt: '2027-06-01T10:00:00Z', endsAt: '2027-06-03T23:00:00Z' },
+      })
+      expect(created.status).toBe(201)
+      expect((await api('GET', '/stages', { token: owner.accessToken, festival: created.body.id })).body).toEqual([])
+      const wrong = await api('POST', '/admin/festivals', { token: owner.accessToken, body: { name: 'Fout', startsAt: '2027-06-03T10:00:00Z', endsAt: '2027-06-01T10:00:00Z' } })
+      expect(wrong.status).toBe(400)
+
+      expect((await api('DELETE', `/admin/owners/${owner.id}`, { token: sudo.accessToken })).status).toBe(204)
+      expect((await api('GET', '/me', { token: owner.accessToken })).body).toMatchObject({ role: 'bezoeker', platformRole: null })
+    })
+
+    it('een mededeling komt alleen aan bij het eigen festival', async () => {
+      const visitor = await login('anna@festival.test')
+      const admin2 = await login('beheerder2@festival.test')
+      const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?token=${visitor.accessToken}&festival=${FIRST_FESTIVAL}`)
+      const types: string[] = []
+      ws.on('message', (raw) => types.push(JSON.parse(raw.toString()).type))
+      await new Promise((resolve) => ws.on('open', resolve))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const res = await api('POST', '/admin/announcements', {
+        token: admin2.accessToken,
+        body: { level: 'info', titleNl: 'Alleen strand', titleEn: 'Beach only', bodyNl: 'Hoi', bodyEn: 'Hi' },
+      })
+      expect(res.status).toBe(201)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      ws.close()
+      expect(types).not.toContain('announcement')
+      const list = await api('GET', '/announcements', { token: visitor.accessToken })
+      expect(list.body.map((a: { titleNl: string }) => a.titleNl)).not.toContain('Alleen strand')
+    })
+
+    it('WebSocket voor een festival waar je niet bij mag wordt geweigerd', async () => {
+      const visitor = await login('bram@festival.test')
+      const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?token=${visitor.accessToken}&festival=${SECOND_FESTIVAL}`)
+      const code = await new Promise((resolve) => ws.on('unexpected-response', (_req, res) => resolve(res.statusCode)))
+      expect(code).toBe(403)
     })
   })
 

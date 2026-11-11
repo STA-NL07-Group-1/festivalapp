@@ -1,16 +1,22 @@
 // Festivalapp — databasediagram
 // Plak dit bestand in https://dbdiagram.io om het diagram te zien.
-// Bron van waarheid is migrations/0001_init.sql; houd dit bestand daarmee gelijk.
+// Bron van waarheid zijn de bestanden in migrations/; houd dit bestand daarmee gelijk.
 
 Project festivalapp {
   database_type: 'PostgreSQL'
-  Note: 'Eén festival per installatie. Geheimen alleen als hash. Alleen de laatste locatie per gebruiker.'
+  Note: 'Meerdere festivals in één installatie (migratie 0004). Geheimen alleen als hash. Alleen de laatste locatie per gebruiker.'
 }
 
-Enum user_role {
-  bezoeker
-  organisatie
+Enum platform_role {
+  eigenaar [note: 'Mag bij elk festival, met de rechten van een beheerder']
+  sudo [note: 'Zoals eigenaar, en de enige die eigenaren en beheerders aanwijst. Hoogstens één account.']
+}
+
+Enum festival_role {
   beheerder
+  organisatie
+  ehbo
+  beveiliging
 }
 
 Enum app_theme {
@@ -80,6 +86,12 @@ TableGroup accounts {
   sessions
 }
 
+TableGroup festivals_en_rollen {
+  festivals
+  festival_members
+  festival_blocks
+}
+
 TableGroup sociaal {
   friend_codes
   friendships
@@ -103,8 +115,36 @@ TableGroup organisatie {
   audit_log
 }
 
+Table festivals {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name text [not null, note: '1–80 tekens']
+  starts_at timestamptz [not null]
+  ends_at timestamptz [not null, note: 'na starts_at; daarna verliezen bezoekers de toegang']
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table festival_members {
+  festival_id uuid [pk, ref: > festivals.id]
+  user_id uuid [pk, ref: > users.id]
+  role festival_role [not null]
+  added_by uuid [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  Note: 'Personeel van een festival. Wie hier niet in staat en een ticket heeft, is bezoeker.'
+}
+
+Table festival_blocks {
+  festival_id uuid [pk, ref: > festivals.id]
+  user_id uuid [pk, ref: > users.id]
+  reason text [not null, note: '1–200 tekens']
+  blocked_by uuid [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  Note: 'Bezoeker geblokkeerd voor één festival. Voor alle festivals: users.blocked_at.'
+}
+
 Table tickets {
   id uuid [pk, default: `gen_random_uuid()`]
+  festival_id uuid [not null, ref: > festivals.id]
+  user_id uuid [ref: > users.id, note: 'Wie het ticket heeft gekoppeld. Hoogstens één ticket per account per festival.']
   code_hash text [not null, unique, note: 'SHA-256 van de ticketcode']
   ticket_type text [not null, default: 'weekend']
   valid_from timestamptz [not null]
@@ -115,18 +155,17 @@ Table tickets {
 
 Table users {
   id uuid [pk, default: `gen_random_uuid()`]
-  ticket_id uuid [unique, ref: - tickets.id]
   email citext [not null, unique]
   password_hash text [not null, note: 'argon2id']
   display_name text [not null, note: '1–40 tekens']
-  role user_role [not null, default: 'bezoeker']
+  platform_role platform_role [note: 'Leeg voor gewone accounts']
   theme app_theme [not null, default: 'systeem']
   locale app_locale [not null, default: 'nl']
   share_location boolean [not null, default: false]
   share_timetable boolean [not null, default: false]
   failed_logins integer [not null, default: 0]
   locked_until timestamptz
-  blocked_at timestamptz [note: 'Geblokkeerd door een beheerder (migratie 0003)']
+  blocked_at timestamptz [note: 'Geblokkeerd voor alle festivals (migratie 0003)']
   blocked_reason text [note: 'Korte neutrale reden, max. 200 tekens']
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
@@ -164,6 +203,7 @@ Table friendships {
 
 Table locations {
   user_id uuid [pk, ref: - users.id]
+  festival_id uuid [not null, ref: > festivals.id]
   latitude "double precision" [not null]
   longitude "double precision" [not null]
   accuracy_m real
@@ -174,6 +214,7 @@ Table locations {
 Table pins {
   id uuid [pk, default: `gen_random_uuid()`]
   user_id uuid [not null, ref: > users.id]
+  festival_id uuid [not null, ref: > festivals.id]
   label text [not null]
   latitude "double precision" [not null]
   longitude "double precision" [not null]
@@ -192,11 +233,16 @@ Table messages {
 
 Table stages {
   id uuid [pk, default: `gen_random_uuid()`]
-  name text [not null, unique]
+  festival_id uuid [not null, ref: > festivals.id]
+  name text [not null, note: 'uniek binnen het festival']
   latitude "double precision" [not null]
   longitude "double precision" [not null]
   capacity integer [not null]
   sort_order integer [not null, default: 0]
+
+  indexes {
+    (festival_id, name) [unique]
+  }
 }
 
 Table performances {
@@ -250,6 +296,7 @@ Table push_subscriptions {
 
 Table announcements {
   id uuid [pk, default: `gen_random_uuid()`]
+  festival_id uuid [not null, ref: > festivals.id]
   author_id uuid [ref: > users.id]
   level announcement_level [not null, default: 'info']
   title_nl text [not null]
@@ -262,6 +309,7 @@ Table announcements {
 
 Table sos_alerts {
   id uuid [pk, default: `gen_random_uuid()`]
+  festival_id uuid [not null, ref: > festivals.id]
   user_id uuid [ref: > users.id]
   latitude "double precision"
   longitude "double precision"
@@ -285,6 +333,7 @@ Table audit_log {
 
 Table map_points {
   id uuid [pk, default: `gen_random_uuid()`]
+  festival_id uuid [not null, ref: > festivals.id]
   kind map_point_kind [not null]
   name text [not null, note: '1–60 tekens']
   description text [note: 'max. 200 tekens']

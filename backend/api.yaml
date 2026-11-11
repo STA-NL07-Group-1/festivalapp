@@ -11,15 +11,24 @@ info:
     refresh-token (7 dagen, alleen als hash opgeslagen). Stuur het access-token mee als
     `Authorization: Bearer <token>`.
 
-    **Rollen.** `x-roles` bij een operatie geeft aan welke rollen hem mogen gebruiken.
-    Zonder `x-roles` mag elke ingelogde gebruiker het. Alles onder `/admin` is alleen
-    voor `organisatie` en `beheerder`.
+    **Festivals.** Er kunnen meerdere festivals naast elkaar bestaan. Stuur bij elk verzoek
+    de header `X-Festival-Id` mee met het festival waar het over gaat (zie `GET /festivals`).
+    Zonder header kiest de server het festival dat nu bezig is, anders het eerstvolgende.
+    Bezoekers hebben per festival een ticket nodig en verliezen de toegang als het festival
+    is afgelopen. Vrienden en chats horen bij het account en blijven altijd bereikbaar.
 
-    **Realtime.** Na het inloggen opent de app een WebSocket op `/ws?token=<access-token>`.
+    **Rollen.** Een rol geldt per festival: `beheerder`, `organisatie`, `ehbo` of `beveiliging`.
+    Wie alleen een ticket heeft is `bezoeker`. `x-roles` bij een operatie geeft aan welke rollen
+    hem mogen gebruiken; zonder `x-roles` mag elke ingelogde gebruiker het. Daarnaast zijn er twee
+    rollen over alle festivals heen (`x-platform-roles`): `eigenaar` en `sudo`. Die mogen bij elk
+    festival, met de rechten van een beheerder. Alleen `sudo` wijst eigenaren en beheerders aan.
+
+    **Realtime.** Na het inloggen opent de app een WebSocket op
+    `/ws?token=<access-token>&festival=<festival-id>`. Je krijgt alleen berichten van dat festival.
     De server stuurt berichten als JSON: `{ "type": "...", "data": { ... } }`. Types:
     `friend.location`, `friend.location.removed`, `friend.added`, `friend.removed`, `pin.created`,
     `chat.message`, `timetable.update`, `announcement`, `crowd.update`,
-    `sos.update` (alleen organisatie). De client stuurt alleen `ping`; alle wijzigingen
+    `map_point.update`, `map_point.removed`, `sos.update` (alleen personeel van het festival). De client stuurt alleen `ping`; alle wijzigingen
     lopen via REST zodat autorisatie op één plek zit.
 
     **Fouten** hebben altijd de vorm van `Error` en lekken nooit stacktraces of SQL.
@@ -57,8 +66,10 @@ tags:
     description: Pushmeldingen, mededelingen en SOS
   - name: chatbot
     description: AI-assistent (Open Learning)
+  - name: festivals
+    description: Festivals, tickets, het team per festival en de eigenaren
   - name: admin
-    description: Beheerportal (alleen organisatie)
+    description: Beheerportal (alleen personeel van het festival)
   - name: iot
     description: Endpoints voor sensoren
   - name: system
@@ -197,6 +208,8 @@ paths:
                 email: anna@example.org
                 displayName: Anna
                 role: bezoeker
+                platformRole: null
+                festivalId: 00000000-0000-4000-8000-000000000001
                 theme: systeem
                 locale: nl
                 shareLocation: true
@@ -849,7 +862,7 @@ paths:
       operationId: createAnnouncement
       summary: Plaats een mededeling of noodbericht
       description: Niveau `nood` wordt direct via WebSocket én push naar alle bezoekers gestuurd. Wordt gelogd in `audit_log`.
-      x-roles: [organisatie, beheerder]
+      x-roles: [beheerder, organisatie]
       requestBody:
         required: true
         content:
@@ -879,7 +892,7 @@ paths:
       tags: [admin]
       operationId: createMapPoint
       summary: Zet een punt op de kaart
-      x-roles: [organisatie, beheerder]
+      x-roles: [beheerder, organisatie]
       requestBody:
         required: true
         content:
@@ -902,7 +915,7 @@ paths:
       tags: [admin]
       operationId: updateMapPoint
       summary: Wijzig een kaartpunt
-      x-roles: [organisatie, beheerder]
+      x-roles: [beheerder, organisatie]
       requestBody:
         required: true
         content:
@@ -922,7 +935,7 @@ paths:
       tags: [admin]
       operationId: deleteMapPoint
       summary: Verwijder een kaartpunt
-      x-roles: [organisatie, beheerder]
+      x-roles: [beheerder, organisatie]
       responses:
         '204': { description: Verwijderd }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -934,7 +947,7 @@ paths:
       tags: [admin]
       operationId: createPerformance
       summary: Voeg een optreden toe aan de timetable
-      x-roles: [organisatie, beheerder]
+      x-roles: [beheerder, organisatie]
       requestBody:
         required: true
         content:
@@ -966,7 +979,7 @@ paths:
       operationId: updatePerformance
       summary: Wijzig een optreden (tijd, status)
       description: Bezoekers die dit optreden in hun timetable hebben, krijgen een live update en een pushmelding.
-      x-roles: [organisatie, beheerder]
+      x-roles: [beheerder, organisatie]
       requestBody:
         required: true
         content:
@@ -996,7 +1009,7 @@ paths:
       tags: [admin]
       operationId: listSosAlerts
       summary: Openstaande SOS-meldingen
-      x-roles: [organisatie, beheerder]
+      x-roles: [beheerder, organisatie, ehbo, beveiliging]
       responses:
         '200':
           description: Meldingen, oudste eerst
@@ -1028,7 +1041,7 @@ paths:
       tags: [admin]
       operationId: updateSosAlert
       summary: Werk de status van een SOS-melding bij
-      x-roles: [organisatie, beheerder]
+      x-roles: [beheerder, organisatie, ehbo, beveiliging]
       requestBody:
         required: true
         content:
@@ -1063,8 +1076,8 @@ paths:
     get:
       tags: [admin]
       operationId: listUsers
-      summary: Zoek gebruikers (maximaal 100)
-      x-roles: [beheerder]
+      summary: Zoek bezoekers van dit festival (maximaal 100)
+      x-roles: [beheerder, organisatie]
       parameters:
         - name: q
           in: query
@@ -1089,8 +1102,11 @@ paths:
       tags: [admin]
       operationId: updateUser
       summary: Wijzig het tickettype of blokkeer een bezoeker
-      description: Alleen bezoekers. Blokkeren logt de bezoeker direct uit; een geblokkeerd account kan niet meer inloggen.
-      x-roles: [beheerder]
+      description: |
+        Alleen bezoekers met een ticket van dit festival. Een blokkade geldt standaard alleen voor
+        dit festival (`blockScope: festival`). Alleen een eigenaar of sudo kan iemand voor alle
+        festivals blokkeren (`blockScope: alle`); dat account wordt direct uitgelogd en kan niet meer inloggen.
+      x-roles: [beheerder, organisatie]
       requestBody:
         required: true
         content:
@@ -1135,6 +1151,207 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ---------------------------------------------------------------- festivals
+  /festivals:
+    get:
+      tags: [festivals]
+      operationId: listMyFestivals
+      summary: Festivals waar je bij mag
+      description: |
+        Bezoekers zien de festivals waar ze een ticket voor hebben en die nog niet zijn afgelopen.
+        Personeel ziet de festivals waar het een rol heeft; eigenaren en sudo zien alles.
+        Het eerste festival in de lijst is het festival dat de server kiest als je geen `X-Festival-Id` meestuurt.
+      responses:
+        '200':
+          description: Festivals, het meest logische eerst
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 500
+                items: { $ref: '#/components/schemas/Festival' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/tickets:
+    post:
+      tags: [festivals]
+      operationId: addMyTicket
+      summary: Voeg een ticket toe aan je account
+      description: Het ticket bepaalt bij welk festival je erbij komt. Hoogstens één ticket per festival.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddTicket' }
+      responses:
+        '201':
+          description: Toegevoegd; je festivals
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 500
+                items: { $ref: '#/components/schemas/Festival' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Ticket onbekend, al gebruikt of verlopen, of je hebt al een ticket voor dit festival
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/festivals:
+    post:
+      tags: [festivals]
+      operationId: createFestival
+      summary: Maak een festival aan
+      x-platform-roles: [eigenaar, sudo]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFestival' }
+      responses:
+        '201':
+          description: Aangemaakt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Festival' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/festival:
+    patch:
+      tags: [festivals]
+      operationId: updateFestival
+      summary: Wijzig de naam of de datums van dit festival
+      x-roles: [beheerder]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateFestival' }
+      responses:
+        '200':
+          description: Gewijzigd
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Festival' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/team:
+    get:
+      tags: [festivals]
+      operationId: listTeam
+      summary: Het personeel van dit festival
+      x-roles: [beheerder, organisatie]
+      responses:
+        '200':
+          description: Teamleden
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 500
+                items: { $ref: '#/components/schemas/TeamMember' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [festivals]
+      operationId: setTeamMember
+      summary: Geef iemand een rol bij dit festival
+      description: |
+        Wie welke rol mag uitdelen: `beheerder` alleen sudo; `organisatie` een beheerder (of eigenaar);
+        `ehbo` en `beveiliging` ook de organisatie. Bestaat er nog geen account met dit e-mailadres,
+        dan wordt het aangemaakt met de opgegeven naam en het tijdelijke wachtwoord.
+      x-roles: [beheerder, organisatie]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetTeamMember' }
+      responses:
+        '200':
+          description: Opgeslagen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamMember' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/team/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    delete:
+      tags: [festivals]
+      operationId: removeTeamMember
+      summary: Haal iemand uit het team van dit festival
+      x-roles: [beheerder, organisatie]
+      responses:
+        '204': { description: Verwijderd uit het team (het account blijft bestaan) }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/owners:
+    get:
+      tags: [festivals]
+      operationId: listOwners
+      summary: Eigenaren van het platform
+      x-platform-roles: [sudo]
+      responses:
+        '200':
+          description: Eigenaren en sudo
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 500
+                items: { $ref: '#/components/schemas/Owner' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [festivals]
+      operationId: addOwner
+      summary: Maak een bestaand account eigenaar
+      x-platform-roles: [sudo]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddOwner' }
+      responses:
+        '200':
+          description: Opgeslagen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Owner' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/owners/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    delete:
+      tags: [festivals]
+      operationId: removeOwner
+      summary: Haal de rol eigenaar weg
+      x-platform-roles: [sudo]
+      responses:
+        '204': { description: Geen eigenaar meer (het account blijft bestaan) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ---------------------------------------------------------------- iot
   /iot/crowd-readings:
@@ -1280,19 +1497,31 @@ components:
         expiresIn: { type: integer, description: Seconden tot het access-token verloopt, maximum: 900 }
 
     # --- account
-    Role: { type: string, enum: [bezoeker, organisatie, beheerder] }
+    Role:
+      type: string
+      enum: [bezoeker, beheerder, organisatie, ehbo, beveiliging]
+      description: Rol in het festival van dit verzoek. Wie alleen een ticket heeft is bezoeker.
+    FestivalRole: { type: string, enum: [beheerder, organisatie, ehbo, beveiliging] }
+    PlatformRole: { type: string, enum: [eigenaar, sudo] }
     Theme: { type: string, enum: [systeem, licht, donker] }
     Locale: { type: string, enum: [nl, en] }
     Me:
       type: object
       x-table: users
       additionalProperties: false
-      required: [id, email, displayName, role, theme, locale, shareLocation, shareTimetable]
+      x-computed: [role, festivalId]
+      required: [id, email, displayName, role, platformRole, festivalId, theme, locale, shareLocation, shareTimetable]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         displayName: { type: string }
         role: { $ref: '#/components/schemas/Role' }
+        platformRole:
+          oneOf: [{ $ref: '#/components/schemas/PlatformRole' }, { type: 'null' }]
+        festivalId:
+          type: [string, 'null']
+          format: uuid
+          description: Het festival van dit verzoek; null als je (nog) bij geen festival hoort
         theme: { $ref: '#/components/schemas/Theme' }
         locale: { $ref: '#/components/schemas/Locale' }
         shareLocation: { type: boolean }
@@ -1415,14 +1644,17 @@ components:
     AdminUser:
       type: object
       additionalProperties: false
-      required: [id, email, displayName, role, ticketType, blocked, blockedReason, createdAt]
+      required: [id, email, displayName, ticketType, blocked, blockScope, blockedReason, createdAt]
       properties:
         id: { type: string, format: uuid }
         email: { type: string }
         displayName: { type: string }
-        role: { type: string, enum: [bezoeker, organisatie, beheerder] }
         ticketType: { type: [string, 'null'] }
         blocked: { type: boolean }
+        blockScope:
+          type: [string, 'null']
+          enum: [festival, alle, null]
+          description: festival = alleen dit festival, alle = alle festivals
         blockedReason: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
     UpdateUser:
@@ -1433,6 +1665,89 @@ components:
         ticketType: { $ref: '#/components/schemas/TicketType' }
         blocked: { type: boolean }
         blockedReason: { type: string, minLength: 1, maxLength: 200 }
+        blockScope:
+          type: string
+          enum: [festival, alle]
+          description: Standaard festival. "alle" mag alleen een eigenaar of sudo.
+    Festival:
+      type: object
+      x-table: festivals
+      x-computed: [role, active]
+      additionalProperties: false
+      required: [id, name, startsAt, endsAt, role, active]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        role: { $ref: '#/components/schemas/Role' }
+        active: { type: boolean, description: Het festival is nu bezig }
+    CreateFestival:
+      type: object
+      additionalProperties: false
+      required: [name, startsAt, endsAt]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+    UpdateFestival:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+    AddTicket:
+      type: object
+      additionalProperties: false
+      required: [ticketCode]
+      properties:
+        ticketCode: { type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9-]+$' }
+    TeamMember:
+      type: object
+      x-table: festival_members
+      additionalProperties: false
+      required: [userId, email, displayName, role, addedAt]
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: string }
+        displayName: { type: string }
+        role: { $ref: '#/components/schemas/FestivalRole' }
+        addedAt: { type: string, format: date-time }
+    SetTeamMember:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        role: { $ref: '#/components/schemas/FestivalRole' }
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: Alleen nodig als er nog geen account met dit e-mailadres is
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          writeOnly: true
+          description: Tijdelijk wachtwoord; alleen nodig als er nog geen account is
+    Owner:
+      type: object
+      additionalProperties: false
+      required: [userId, email, displayName, platformRole]
+      properties:
+        userId: { type: string, format: uuid }
+        email: { type: string }
+        displayName: { type: string }
+        platformRole: { $ref: '#/components/schemas/PlatformRole' }
+    AddOwner:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
     MapPointKind: { type: string, enum: [wifi, ehbo, water, toilet, ingang, uitgang, eten, activiteit, oplaadpunt, info] }
     MapPoint:
       type: object
