@@ -9,8 +9,10 @@ import { Empty, ErrorNote, Screen, Sheet } from './ui'
 /** Nu bezig, binnenkort of (alleen voor personeel) afgelopen */
 export function FestivalStatus({ festival }: { festival: Festival }) {
   const { t } = useI18n()
+  // Het tijdstip één keer vastleggen: Date.now() tijdens het tekenen geeft bij elke render een ander antwoord
+  const [now] = useState(() => Date.now())
   if (festival.active) return <span className="badge live">{t('festival.active')}</span>
-  if (new Date(festival.endsAt).getTime() <= Date.now()) return <span className="badge">{t('festival.ended')}</span>
+  if (new Date(festival.endsAt).getTime() <= now) return <span className="badge">{t('festival.ended')}</span>
   return <span className="badge">{t('festival.upcoming')}</span>
 }
 
