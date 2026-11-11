@@ -26,39 +26,39 @@ END;
 $$;
 
 -- --- Testdata ----------------------------------------------------------------
-INSERT INTO tickets (id, code_hash, valid_from, valid_until) VALUES
-    ('00000000-0000-0000-0000-0000000000a1', 'hash-ticket-1', now(), now() + interval '3 days'),
-    ('00000000-0000-0000-0000-0000000000a2', 'hash-ticket-2', now(), now() + interval '3 days');
+-- Het eerste festival bestaat al (migratie 0004); hier komt een tweede bij
+INSERT INTO festivals (id, name, starts_at, ends_at) VALUES
+    ('00000000-0000-4000-8000-0000000000f2', 'Tweede festival', now(), now() + interval '3 days');
 
-INSERT INTO users (id, ticket_id, email, password_hash, display_name) VALUES
-    ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1',
-     'anna@example.org', '$argon2id$v=19$m=65536,t=3,p=4$abc$def', 'Anna'),
-    ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a2',
-     'bram@example.org', '$argon2id$v=19$m=65536,t=3,p=4$abc$def', 'Bram');
+INSERT INTO users (id, email, password_hash, display_name) VALUES
+    ('00000000-0000-0000-0000-000000000001', 'anna@example.org', '$argon2id$v=19$m=65536,t=3,p=4$abc$def', 'Anna'),
+    ('00000000-0000-0000-0000-000000000002', 'bram@example.org', '$argon2id$v=19$m=65536,t=3,p=4$abc$def', 'Bram');
 
-INSERT INTO stages (id, name, latitude, longitude, capacity) VALUES
-    ('00000000-0000-0000-0000-0000000000b1', 'Hoofdpodium', 52.37, 4.89, 5000)
+INSERT INTO tickets (id, festival_id, user_id, status, code_hash, valid_from, valid_until) VALUES
+    ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000001', 'gekoppeld', 'hash-ticket-1', now(), now() + interval '3 days'),
+    ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000002', 'gekoppeld', 'hash-ticket-2', now(), now() + interval '3 days');
+
+INSERT INTO stages (id, festival_id, name, latitude, longitude, capacity) VALUES
+    ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-4000-8000-000000000001', 'Hoofdpodium', 52.37, 4.89, 5000)
 ON CONFLICT DO NOTHING;
 
 -- --- tickets -----------------------------------------------------------------
 SELECT pg_temp.expect_fail('ticket eindigt voor begin',
-    $q$INSERT INTO tickets (code_hash, valid_from, valid_until) VALUES ('x', now(), now() - interval '1 day')$q$);
+    $q$INSERT INTO tickets (festival_id, code_hash, valid_from, valid_until) VALUES ('00000000-0000-4000-8000-000000000001', 'x', now(), now() - interval '1 day')$q$);
 SELECT pg_temp.expect_fail('dubbele ticketcode',
-    $q$INSERT INTO tickets (code_hash, valid_from, valid_until) VALUES ('hash-ticket-1', now(), now() + interval '1 day')$q$);
+    $q$INSERT INTO tickets (festival_id, code_hash, valid_from, valid_until) VALUES ('00000000-0000-4000-8000-000000000001', 'hash-ticket-1', now(), now() + interval '1 day')$q$);
 
 -- --- users -------------------------------------------------------------------
 SELECT pg_temp.expect_fail('wachtwoord niet als argon2id-hash',
-    $q$INSERT INTO users (email, password_hash, display_name, role) VALUES ('c@example.org', 'geheim123', 'C', 'organisatie')$q$);
+    $q$INSERT INTO users (email, password_hash, display_name) VALUES ('c@example.org', 'geheim123', 'C')$q$);
 SELECT pg_temp.expect_fail('e-mail dubbel (hoofdletterongevoelig)',
-    $q$INSERT INTO users (email, password_hash, display_name, role) VALUES ('ANNA@example.org', '$argon2id$x', 'A2', 'organisatie')$q$);
+    $q$INSERT INTO users (email, password_hash, display_name) VALUES ('ANNA@example.org', '$argon2id$x', 'A2')$q$);
 SELECT pg_temp.expect_fail('ongeldig e-mailadres',
-    $q$INSERT INTO users (email, password_hash, display_name, role) VALUES ('geen-email', '$argon2id$x', 'D', 'organisatie')$q$);
-SELECT pg_temp.expect_fail('bezoeker zonder ticket',
-    $q$INSERT INTO users (email, password_hash, display_name) VALUES ('e@example.org', '$argon2id$x', 'E')$q$);
-SELECT pg_temp.expect_fail('twee accounts op één ticket',
-    $q$INSERT INTO users (ticket_id, email, password_hash, display_name) VALUES ('00000000-0000-0000-0000-0000000000a1', 'f@example.org', '$argon2id$x', 'F')$q$);
+    $q$INSERT INTO users (email, password_hash, display_name) VALUES ('geen-email', '$argon2id$x', 'D')$q$);
+SELECT pg_temp.expect_fail('twee tickets van hetzelfde festival op één account',
+    $q$INSERT INTO tickets (festival_id, user_id, code_hash, valid_from, valid_until) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000001', 'hash-ticket-3', now(), now() + interval '1 day')$q$);
 SELECT pg_temp.expect_fail('lege weergavenaam',
-    $q$INSERT INTO users (email, password_hash, display_name, role) VALUES ('g@example.org', '$argon2id$x', '', 'organisatie')$q$);
+    $q$INSERT INTO users (email, password_hash, display_name) VALUES ('g@example.org', '$argon2id$x', '')$q$);
 
 -- --- friend_codes ------------------------------------------------------------
 SELECT pg_temp.expect_fail('vriendcode langer dan 15 minuten geldig',
@@ -74,9 +74,9 @@ SELECT pg_temp.expect_fail('vriendschap met jezelf',
 
 -- --- locations ---------------------------------------------------------------
 SELECT pg_temp.expect_fail('breedtegraad buiten bereik',
-    $q$INSERT INTO locations (user_id, latitude, longitude, expires_at) VALUES ('00000000-0000-0000-0000-000000000001', 91, 4.9, now() + interval '10 minutes')$q$);
+    $q$INSERT INTO locations (user_id, festival_id, latitude, longitude, expires_at) VALUES ('00000000-0000-0000-0000-000000000001', '00000000-0000-4000-8000-000000000001', 91, 4.9, now() + interval '10 minutes')$q$);
 SELECT pg_temp.expect_fail('locatie langer dan 1 uur bewaard',
-    $q$INSERT INTO locations (user_id, latitude, longitude, expires_at) VALUES ('00000000-0000-0000-0000-000000000001', 52.3, 4.9, now() + interval '1 day')$q$);
+    $q$INSERT INTO locations (user_id, festival_id, latitude, longitude, expires_at) VALUES ('00000000-0000-0000-0000-000000000001', '00000000-0000-4000-8000-000000000001', 52.3, 4.9, now() + interval '1 day')$q$);
 
 -- --- messages ----------------------------------------------------------------
 SELECT pg_temp.expect_fail('bericht aan jezelf',
@@ -96,9 +96,9 @@ SELECT pg_temp.expect_fail('push-endpoint zonder https',
 
 -- --- sos_alerts --------------------------------------------------------------
 SELECT pg_temp.expect_fail('SOS met alleen breedtegraad',
-    $q$INSERT INTO sos_alerts (user_id, latitude) VALUES ('00000000-0000-0000-0000-000000000001', 52.3)$q$);
+    $q$INSERT INTO sos_alerts (festival_id, user_id, latitude) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000001', 52.3)$q$);
 SELECT pg_temp.expect_fail('SOS afgehandeld zonder tijdstip',
-    $q$INSERT INTO sos_alerts (user_id, status) VALUES ('00000000-0000-0000-0000-000000000001', 'afgehandeld')$q$);
+    $q$INSERT INTO sos_alerts (festival_id, user_id, status) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000001', 'afgehandeld')$q$);
 
 -- --- users: blokkeren ---------------------------------------------------------
 SELECT pg_temp.expect_fail('geblokkeerd zonder reden',
@@ -108,11 +108,35 @@ SELECT pg_temp.expect_fail('reden zonder blokkade',
 
 -- --- map_points --------------------------------------------------------------
 SELECT pg_temp.expect_fail('kaartpunt zonder naam',
-    $q$INSERT INTO map_points (kind, name, latitude, longitude) VALUES ('wifi', '', 52.3, 4.8)$q$);
+    $q$INSERT INTO map_points (festival_id, kind, name, latitude, longitude) VALUES ('00000000-0000-4000-8000-000000000001', 'wifi', '', 52.3, 4.8)$q$);
 SELECT pg_temp.expect_fail('kaartpunt met onbekende soort',
-    $q$INSERT INTO map_points (kind, name, latitude, longitude) VALUES ('kroeg', 'Bar', 52.3, 4.8)$q$);
+    $q$INSERT INTO map_points (festival_id, kind, name, latitude, longitude) VALUES ('00000000-0000-4000-8000-000000000001', 'kroeg', 'Bar', 52.3, 4.8)$q$);
 SELECT pg_temp.expect_fail('kaartpunt buiten de wereld',
-    $q$INSERT INTO map_points (kind, name, latitude, longitude) VALUES ('ehbo', 'EHBO', 95, 4.8)$q$);
+    $q$INSERT INTO map_points (festival_id, kind, name, latitude, longitude) VALUES ('00000000-0000-4000-8000-000000000001', 'ehbo', 'EHBO', 95, 4.8)$q$);
+
+-- --- festivals en rollen ---------------------------------------------------
+SELECT pg_temp.expect_fail('festival eindigt voor het begint',
+    $q$INSERT INTO festivals (name, starts_at, ends_at) VALUES ('Fout', now(), now() - interval '1 day')$q$);
+SELECT pg_temp.expect_fail('festival zonder naam',
+    $q$INSERT INTO festivals (name, starts_at, ends_at) VALUES ('', now(), now() + interval '1 day')$q$);
+SELECT pg_temp.expect_fail('twee podia met dezelfde naam op één festival',
+    $q$INSERT INTO stages (festival_id, name, latitude, longitude, capacity) VALUES ('00000000-0000-4000-8000-000000000001', 'Hoofdpodium', 52.37, 4.89, 100)$q$);
+-- Dezelfde podiumnaam op een ander festival mag wel
+INSERT INTO stages (festival_id, name, latitude, longitude, capacity) VALUES
+    ('00000000-0000-4000-8000-0000000000f2', 'Hoofdpodium', 52.11, 4.28, 100);
+SELECT pg_temp.expect_fail('podium zonder festival',
+    $q$INSERT INTO stages (name, latitude, longitude, capacity) VALUES ('Los podium', 52.37, 4.89, 100)$q$);
+SELECT pg_temp.expect_fail('onbekende rol bij een festival',
+    $q$INSERT INTO festival_members (festival_id, user_id, role) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000001', 'bezoeker')$q$);
+INSERT INTO festival_members (festival_id, user_id, role) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000001', 'ehbo');
+SELECT pg_temp.expect_fail('twee rollen bij hetzelfde festival',
+    $q$INSERT INTO festival_members (festival_id, user_id, role) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000001', 'beveiliging')$q$);
+UPDATE users SET platform_role = NULL WHERE platform_role = 'sudo';
+UPDATE users SET platform_role = 'sudo' WHERE id = '00000000-0000-0000-0000-000000000001';
+SELECT pg_temp.expect_fail('tweede sudo-account',
+    $q$UPDATE users SET platform_role = 'sudo' WHERE id = '00000000-0000-0000-0000-000000000002'$q$);
+SELECT pg_temp.expect_fail('festivalblokkade zonder reden',
+    $q$INSERT INTO festival_blocks (festival_id, user_id, reason) VALUES ('00000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000002', '')$q$);
 
 -- --- audit_log ---------------------------------------------------------------
 INSERT INTO audit_log (actor_id, action) VALUES ('00000000-0000-0000-0000-000000000001', 'auth.login');

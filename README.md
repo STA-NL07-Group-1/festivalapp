@@ -30,8 +30,10 @@ npm run dev                    # backend, app en portal tegelijk
 
 **Demo-accounts** (wachtwoord `Festival-demo-2026`, alleen lokaal):
 `anna@festival.test` en `bram@festival.test` (bezoekers, al vrienden),
-`organisatie@festival.test` en `beheerder@festival.test` (portal).
-Zelf registreren kan met ticketcodes `DEMO-0001` t/m `DEMO-0048`.
+`beheerder@`, `organisatie@`, `ehbo@` en `beveiliging@festival.test` (portal, Testfestival),
+`beheerder2@festival.test` (portal, Tweede Testfestival) en `sudo@festival.test` (alle festivals).
+Zelf registreren kan met ticketcodes `DEMO-0001` t/m `DEMO-0048`. Met `TWEE-0001` t/m `TWEE-0010`
+voeg je het tweede testfestival aan een account toe.
 
 ## Overige commando's
 

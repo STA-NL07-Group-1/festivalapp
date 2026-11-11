@@ -1,13 +1,13 @@
 // Account, vrienden, locaties, pins en chat.
 import type { Deps } from '../app.ts'
 import { areFriends, audit, friendIds, transaction } from '../db.ts'
-import { badRequest, forbidden, notFound, requireUser, uuidParam, type Router } from '../http.ts'
+import { badRequest, forbidden, notFound, requireFestival, requireUser, uuidParam, type Router } from '../http.ts'
 import { newFriendCode, normalizeCode, sha256 } from '../security.ts'
 import { toFriend, toFriendLocation, toMe, toMessage, toPin } from './mappers.ts'
 
 const FRIEND_CODE_MINUTES = 10
 const LOCATION_TTL_MINUTES = 10
-const ME_COLUMNS = 'id, email, display_name, role, theme, locale, share_location, share_timetable'
+const ME_COLUMNS = 'id, email, display_name, theme, locale, share_location, share_timetable'
 
 export function socialRoutes(r: Router, deps: Deps): void {
   const { db } = deps
@@ -17,7 +17,7 @@ export function socialRoutes(r: Router, deps: Deps): void {
     const user = requireUser(ctx)
     const { rows } = await db.query(`SELECT ${ME_COLUMNS} FROM users WHERE id = $1`, [user.id])
     if (!rows[0]) throw notFound()
-    return { status: 200, body: toMe(rows[0]) }
+    return { status: 200, body: toMe(rows[0], ctx) }
   })
 
   r.patch('/me', { operationId: 'updateMe' }, async (ctx) => {
@@ -48,16 +48,16 @@ export function socialRoutes(r: Router, deps: Deps): void {
     }
     const { rows } = await db.query(`UPDATE users SET ${sets.join(', ')} WHERE id = $1 RETURNING ${ME_COLUMNS}`, values)
     if (body.shareLocation === false) await removeLocation(user.id)
-    return { status: 200, body: toMe(rows[0]!) }
+    return { status: 200, body: toMe(rows[0]!, ctx) }
   })
 
   r.delete('/me', { operationId: 'deleteMe' }, async (ctx) => {
     const user = requireUser(ctx)
     const friends = await friendIds(db, user.id)
     await transaction(db, async (tx) => {
-      const { rows } = await tx.query<{ ticket_id: string | null }>('DELETE FROM users WHERE id = $1 RETURNING ticket_id', [user.id])
-      // Ticket weer vrijgeven, zodat de bezoeker opnieuw een account kan maken
-      if (rows[0]?.ticket_id) await tx.query(`UPDATE tickets SET status = 'geldig' WHERE id = $1`, [rows[0].ticket_id])
+      // Tickets weer vrijgeven, zodat de bezoeker opnieuw een account kan maken
+      await tx.query(`UPDATE tickets SET status = 'geldig', user_id = NULL WHERE user_id = $1 AND status = 'gekoppeld'`, [user.id])
+      await tx.query('DELETE FROM users WHERE id = $1', [user.id])
       await audit(tx, null, 'account.delete', { type: 'user', id: user.id })
     })
     deps.realtime.toUsers(friends, 'friend.removed', { userId: user.id })
@@ -72,6 +72,7 @@ export function socialRoutes(r: Router, deps: Deps): void {
 
   r.put('/me/location', { operationId: 'updateMyLocation', rateLimit: { limit: 12, windowMs: 60_000 } }, async (ctx) => {
     const user = requireUser(ctx)
+    const festivalId = requireFestival(ctx)
     const { latitude, longitude, accuracyM } = ctx.body as { latitude: number; longitude: number; accuracyM?: number }
     const { rows } = await db.query<{ share_location: boolean; display_name: string }>(
       'SELECT share_location, display_name FROM users WHERE id = $1',
@@ -79,15 +80,16 @@ export function socialRoutes(r: Router, deps: Deps): void {
     )
     if (!rows[0]?.share_location) throw forbidden('Zet eerst "Locatie delen" aan.')
     const saved = await db.query(
-      `INSERT INTO locations (user_id, latitude, longitude, accuracy_m, recorded_at, expires_at)
-       VALUES ($1, $2, $3, $4, now(), now() + make_interval(mins => $5))
-       ON CONFLICT (user_id) DO UPDATE SET latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
+      `INSERT INTO locations (user_id, festival_id, latitude, longitude, accuracy_m, recorded_at, expires_at)
+       VALUES ($1, $6, $2, $3, $4, now(), now() + make_interval(mins => $5))
+       ON CONFLICT (user_id) DO UPDATE SET festival_id = EXCLUDED.festival_id, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
          accuracy_m = EXCLUDED.accuracy_m, recorded_at = EXCLUDED.recorded_at, expires_at = EXCLUDED.expires_at
        RETURNING user_id, latitude, longitude, accuracy_m, recorded_at`,
-      [user.id, latitude, longitude, accuracyM ?? null, LOCATION_TTL_MINUTES],
+      [user.id, latitude, longitude, accuracyM ?? null, LOCATION_TTL_MINUTES, festivalId],
     )
     const event = toFriendLocation({ ...saved.rows[0], display_name: rows[0].display_name })
-    deps.realtime.toUsers(await friendIds(db, user.id), 'friend.location', event)
+    // Alleen vrienden die op hetzelfde festival zijn zien waar je bent
+    deps.realtime.toUsers(await friendIds(db, user.id), 'friend.location', event, festivalId)
     return { status: 204 }
   })
 
@@ -176,9 +178,10 @@ export function socialRoutes(r: Router, deps: Deps): void {
          JOIN users u ON u.id = CASE WHEN f.user_a = $1 THEN f.user_b ELSE f.user_a END
          JOIN locations l ON l.user_id = u.id
         WHERE (f.user_a = $1 OR f.user_b = $1)
+          AND l.festival_id = $2
           AND u.share_location AND l.expires_at > now()
         LIMIT 500`,
-      [user.id],
+      [user.id, requireFestival(ctx)],
     )
     return { status: 200, body: rows.map(toFriendLocation) }
   })
@@ -188,13 +191,14 @@ export function socialRoutes(r: Router, deps: Deps): void {
     const user = requireUser(ctx)
     const { rows } = await db.query(
       `SELECT p.* FROM pins p
-        WHERE p.user_id = $1
+        WHERE p.festival_id = $2
+          AND (p.user_id = $1
            OR (p.visibility = 'vrienden' AND EXISTS (
                 SELECT 1 FROM friendships f
-                 WHERE (f.user_a = $1 AND f.user_b = p.user_id) OR (f.user_b = $1 AND f.user_a = p.user_id)))
+                 WHERE (f.user_a = $1 AND f.user_b = p.user_id) OR (f.user_b = $1 AND f.user_a = p.user_id))))
         ORDER BY p.created_at DESC
         LIMIT 1000`,
-      [user.id],
+      [user.id, requireFestival(ctx)],
     )
     return { status: 200, body: rows.map(toPin) }
   })
@@ -202,13 +206,14 @@ export function socialRoutes(r: Router, deps: Deps): void {
   r.post('/pins', { operationId: 'createPin', rateLimit: { limit: 30, windowMs: 60_000 } }, async (ctx) => {
     const user = requireUser(ctx)
     const body = ctx.body as { label: string; latitude: number; longitude: number; visibility?: string }
+    const festivalId = requireFestival(ctx)
     const { rows } = await db.query(
-      `INSERT INTO pins (user_id, label, latitude, longitude, visibility)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [user.id, body.label.trim(), body.latitude, body.longitude, body.visibility ?? 'vrienden'],
+      `INSERT INTO pins (user_id, festival_id, label, latitude, longitude, visibility)
+       VALUES ($1, $6, $2, $3, $4, $5) RETURNING *`,
+      [user.id, body.label.trim(), body.latitude, body.longitude, body.visibility ?? 'vrienden', festivalId],
     )
     const pin = toPin(rows[0]!)
-    if (pin.visibility === 'vrienden') deps.realtime.toUsers(await friendIds(db, user.id), 'pin.created', pin)
+    if (pin.visibility === 'vrienden') deps.realtime.toUsers(await friendIds(db, user.id), 'pin.created', pin, festivalId)
     return { status: 201, body: pin }
   })
 

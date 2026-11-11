@@ -20,6 +20,10 @@ export type Announcement = Schemas['Announcement']
 export type SosAlert = Schemas['SosAlert']
 export type FriendCode = Schemas['FriendCode']
 export type AuthTokens = Schemas['AuthTokens']
+export type Festival = Schemas['Festival']
+export type FestivalRole = Schemas['FestivalRole']
+export type TeamMember = Schemas['TeamMember']
+export type Owner = Schemas['Owner']
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:3000'
 
@@ -36,6 +40,13 @@ export class ApiError extends Error {
 }
 
 let accessToken: string | null = null
+// Het festival dat nu in het portal is gekozen. Gaat als header X-Festival-Id mee met elk verzoek.
+let festivalId: string | null = null
+
+export function setFestival(id: string | null): void {
+  festivalId = id
+}
+export const currentFestival = () => festivalId
 let refreshing: Promise<boolean> | null = null
 let onSessionEnded: () => void = () => {}
 
@@ -121,6 +132,7 @@ export async function request<T = void>(method: string, path: string, body?: unk
   if (!publicRoute) {
     const token = await getAccessToken()
     if (token) headers.Authorization = `Bearer ${token}`
+    if (festivalId) headers['X-Festival-Id'] = festivalId
   }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 

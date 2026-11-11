@@ -2,7 +2,6 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto'
 import argon2 from 'argon2'
 import { SignJWT, jwtVerify } from 'jose'
-import type { AuthUser, Role } from './http.ts'
 
 /** argon2id met de aanbevolen OWASP-parameters */
 export function hashPassword(password: string): Promise<string> {
@@ -46,8 +45,9 @@ export function newFriendCode(): string {
 }
 export const normalizeCode = (code: string) => code.replace(/-/g, '').toUpperCase()
 
-export async function signAccessToken(user: AuthUser, secret: Uint8Array, ttlSeconds: number): Promise<string> {
-  return new SignJWT({ role: user.role })
+// Het token zegt alleen wíe je bent. Welke rol je hebt staat in de database (zie festival.ts).
+export async function signAccessToken(user: { id: string }, secret: Uint8Array, ttlSeconds: number): Promise<string> {
+  return new SignJWT({})
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(user.id)
     .setIssuedAt()
@@ -57,13 +57,12 @@ export async function signAccessToken(user: AuthUser, secret: Uint8Array, ttlSec
     .sign(secret)
 }
 
-export async function verifyAccessToken(token: string, secret: Uint8Array): Promise<AuthUser & { exp: number }> {
+export async function verifyAccessToken(token: string, secret: Uint8Array): Promise<{ id: string; exp: number }> {
   const { payload } = await jwtVerify(token, secret, {
     issuer: 'festivalapp',
     audience: 'festivalapp',
     algorithms: ['HS256'],
   })
-  const role = payload.role as Role
-  if (!payload.sub || !['bezoeker', 'organisatie', 'beheerder'].includes(role)) throw new Error('ongeldig token')
-  return { id: payload.sub, role, exp: payload.exp ?? 0 }
+  if (!payload.sub) throw new Error('ongeldig token')
+  return { id: payload.sub, exp: payload.exp ?? 0 }
 }

@@ -772,8 +772,15 @@ export interface components {
             /** @description Seconden tot het access-token verloopt */
             expiresIn: number;
         };
+        /**
+         * @description Rol in het festival van dit verzoek. Wie alleen een ticket heeft is bezoeker.
+         * @enum {string}
+         */
+        Role: "bezoeker" | "beheerder" | "organisatie" | "ehbo" | "beveiliging";
         /** @enum {string} */
-        Role: "bezoeker" | "organisatie" | "beheerder";
+        FestivalRole: "beheerder" | "organisatie" | "ehbo" | "beveiliging";
+        /** @enum {string} */
+        PlatformRole: "eigenaar" | "sudo";
         /** @enum {string} */
         Theme: "systeem" | "licht" | "donker";
         /** @enum {string} */
@@ -785,6 +792,12 @@ export interface components {
             email: string;
             displayName: string;
             role: components["schemas"]["Role"];
+            platformRole: components["schemas"]["PlatformRole"] | null;
+            /**
+             * Format: uuid
+             * @description Het festival van dit verzoek; null als je (nog) bij geen festival hoort
+             */
+            festivalId: string | null;
             theme: components["schemas"]["Theme"];
             locale: components["schemas"]["Locale"];
             shareLocation: boolean;
@@ -881,10 +894,13 @@ export interface components {
             id: string;
             email: string;
             displayName: string;
-            /** @enum {string} */
-            role: "bezoeker" | "organisatie" | "beheerder";
             ticketType: string | null;
             blocked: boolean;
+            /**
+             * @description festival = alleen dit festival, alle = alle festivals
+             * @enum {string|null}
+             */
+            blockScope: "festival" | "alle" | null;
             blockedReason: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -893,6 +909,69 @@ export interface components {
             ticketType?: components["schemas"]["TicketType"];
             blocked?: boolean;
             blockedReason?: string;
+            /**
+             * @description Standaard festival. "alle" mag alleen een eigenaar of sudo.
+             * @enum {string}
+             */
+            blockScope?: "festival" | "alle";
+        };
+        Festival: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            role: components["schemas"]["Role"];
+            /** @description Het festival is nu bezig */
+            active: boolean;
+        };
+        CreateFestival: {
+            name: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+        };
+        UpdateFestival: {
+            name?: string;
+            /** Format: date-time */
+            startsAt?: string;
+            /** Format: date-time */
+            endsAt?: string;
+        };
+        AddTicket: {
+            ticketCode: string;
+        };
+        TeamMember: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+            role: components["schemas"]["FestivalRole"];
+            /** Format: date-time */
+            addedAt: string;
+        };
+        SetTeamMember: {
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["FestivalRole"];
+            /** @description Alleen nodig als er nog geen account met dit e-mailadres is */
+            displayName?: string;
+            /** @description Tijdelijk wachtwoord; alleen nodig als er nog geen account is */
+            password?: string;
+        };
+        Owner: {
+            /** Format: uuid */
+            userId: string;
+            email: string;
+            displayName: string;
+            platformRole: components["schemas"]["PlatformRole"];
+        };
+        AddOwner: {
+            /** Format: email */
+            email: string;
         };
         /** @enum {string} */
         MapPointKind: "wifi" | "ehbo" | "water" | "toilet" | "ingang" | "uitgang" | "eten" | "activiteit" | "oplaadpunt" | "info";
