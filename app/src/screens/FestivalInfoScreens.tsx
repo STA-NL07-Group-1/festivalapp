@@ -4,7 +4,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api, type FestivalInfo, type LostItem } from '../api/client'
 import { FestivalBar } from '../components/festival'
-import { BackLink, Empty, ErrorNote, Screen } from '../components/ui'
+import { BackLink, Empty, ErrorNote, Screen, Skeleton } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatRelative } from '../lib/format'
 import { festivalKey } from '../lib/offlineStore'
@@ -62,7 +62,7 @@ function SiteMapScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <Frame title={t('info.siteMap')} onBack={onBack}>
-      {state === 'laden' && <p className="muted">{t('common.loading')}</p>}
+      {state === 'laden' && <Skeleton variant="card" rows={1} />}
       {state === 'geen' && <Empty>{t('info.siteMapNone')}</Empty>}
       {state === 'fout' && <ErrorNote>{t('info.siteMapError')}</ErrorNote>}
       {state === 'klaar' && url && (
@@ -86,7 +86,7 @@ function FaqScreen({ onBack }: { onBack: () => void }) {
   const faq = info.data?.faq ?? []
   return (
     <Frame title={t('info.faq')} onBack={onBack}>
-      {info.loading && <p className="muted">{t('common.loading')}</p>}
+      {info.loading && <Skeleton variant="text" rows={4} />}
       {info.data && faq.length === 0 && <Empty>{t('info.faqNone')}</Empty>}
       <div className="faq">
         {faq.map((f) => (
@@ -111,7 +111,7 @@ function HouseRulesScreen({ onBack }: { onBack: () => void }) {
     .filter(Boolean)
   return (
     <Frame title={t('info.houseRules')} onBack={onBack}>
-      {info.loading && <p className="muted">{t('common.loading')}</p>}
+      {info.loading && <Skeleton variant="text" rows={4} />}
       {info.data && rules.length === 0 && <Empty>{t('info.houseRulesNone')}</Empty>}
       {rules.length > 0 && (
         <ol className="card rules">
@@ -131,7 +131,7 @@ function LostItemsScreen({ onBack }: { onBack: () => void }) {
   return (
     <Frame title={t('info.lostItems')} onBack={onBack}>
       <p className="muted">{t('info.lostItemsIntro')}</p>
-      {items.loading && <p className="muted">{t('common.loading')}</p>}
+      {items.loading && <Skeleton rows={3} />}
       {items.data?.length === 0 && <Empty>{t('info.lostItemsNone')}</Empty>}
       <ul className="list">
         {items.data?.map((item) => (
