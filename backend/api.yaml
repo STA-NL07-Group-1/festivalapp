@@ -1248,6 +1248,30 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /admin/tickets/stats:
+    get:
+      tags: [admin]
+      operationId: getTicketStats
+      summary: Aantal tickets van het gekozen festival
+      description: Alleen aantallen, geen ticketcodes of namen.
+      x-roles: [beheerder, organisatie]
+      responses:
+        '200':
+          description: Aantallen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketStats' }
+              example:
+                total: 1250
+                linked: 312
+                available: 921
+                unusable: 17
+                byType:
+                  - { ticketType: vip, total: 50, linked: 31 }
+                  - { ticketType: weekend, total: 1200, linked: 281 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   # ---------------------------------------------------------------- festivals
   /festivals:
     get:
@@ -2404,6 +2428,26 @@ components:
         answer: { type: string }
 
     # --- admin
+    TicketStats:
+      type: object
+      additionalProperties: false
+      required: [total, linked, available, unusable, byType]
+      properties:
+        total: { type: integer, minimum: 0, description: Alle tickets van dit festival }
+        linked: { type: integer, minimum: 0, description: Gekoppeld aan een account }
+        available: { type: integer, minimum: 0, description: 'Geldig, nog niet gebruikt en niet verlopen' }
+        unusable: { type: integer, minimum: 0, description: Verlopen of ingetrokken }
+        byType:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [ticketType, total, linked]
+            properties:
+              ticketType: { type: string }
+              total: { type: integer, minimum: 0 }
+              linked: { type: integer, minimum: 0 }
     TicketImport:
       type: object
       additionalProperties: false

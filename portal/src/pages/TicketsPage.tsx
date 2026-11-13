@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { api, ApiError } from '../api/client'
+import { api, ApiError, type TicketStats } from '../api/client'
+import { useAsync } from '../lib/useAsync'
 
 /** Codes uit geplakte tekst of een CSV halen (één per regel; eerste kolom). */
 // eslint-disable-next-line react-refresh/only-export-components
@@ -11,7 +12,52 @@ export function parseTicketCodes(text: string): string[] {
   return [...new Set(codes)]
 }
 
+const number = (n: number) => n.toLocaleString('nl-NL')
+
+/** Hoeveel tickets dit festival heeft, en hoeveel er al aan een account hangen */
+function TicketCounts({ stats }: { stats: TicketStats }) {
+  const tiles: [string, number][] = [
+    ['Totaal', stats.total],
+    ['Met account', stats.linked],
+    ['Nog te gebruiken', stats.available],
+    ['Verlopen of ingetrokken', stats.unusable],
+  ]
+  return (
+    <>
+      <div className="ticket-counts">
+        {tiles.map(([label, value]) => (
+          <div key={label} className="card ticket-count">
+            <strong>{number(value)}</strong>
+            <span className="muted">{label}</span>
+          </div>
+        ))}
+      </div>
+      {stats.byType.length > 0 && (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Soort ticket</th>
+              <th>Totaal</th>
+              <th>Met account</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.byType.map((row) => (
+              <tr key={row.ticketType}>
+                <td>{row.ticketType}</td>
+                <td>{number(row.total)}</td>
+                <td>{number(row.linked)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  )
+}
+
 export function TicketsPage() {
+  const stats = useAsync(() => api.get<TicketStats>('/admin/tickets/stats'))
   const [result, setResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState(0)
@@ -35,6 +81,7 @@ export function TicketsPage() {
         skipped += res.skipped
       }
       setResult(`${imported} tickets geïmporteerd, ${skipped} overgeslagen (bestonden al of ongeldig).`)
+      void stats.reload()
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Importeren mislukt.')
     }
@@ -43,7 +90,12 @@ export function TicketsPage() {
   return (
     <section>
       <header className="page-header">
-        <h1>Tickets importeren</h1>
+        <h1>Tickets</h1>
+      </header>
+      {stats.data ? <TicketCounts stats={stats.data} /> : stats.error ? <p className="error">Aantallen laden mislukt.</p> : <p className="muted">Laden…</p>}
+
+      <header className="page-header">
+        <h2>Tickets importeren</h2>
         <p className="muted">
           Plak de ticketcodes van de ticketverkoper, één per regel (of een CSV met de code in de eerste kolom). Codes worden
           direct gehasht; de platte codes worden niet opgeslagen.
