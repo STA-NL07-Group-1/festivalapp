@@ -88,6 +88,39 @@ sudo systemctl start festivalapp-deploy.service
 
 `flock` in de service zorgt dat er nooit twee deploys tegelijk lopen.
 
+## Controleren of de site werkt (healthcheck)
+
+Een systemd-timer draait elke 5 minuten `healthcheck.sh`. Die opent `https://<DOMAIN>/api/health` en test
+zo de hele keten: Cloudflare, de tunnel, Caddy, de backend en de database. Mislukt het **2 keer achter
+elkaar**, dan krijg je één mail. Werkt het weer, dan krijg je nog één mail. De mail gaat via Resend met de
+`RESEND_API_KEY` uit `.env.production`; zet daar ook het adres in waar de melding heen moet:
+
+```bash
+nano ~/festivalapp/.env.production      # voeg toe: ALERT_EMAIL=jij@example.com
+```
+
+Eenmalig installeren (net als de auto-deploy):
+
+```bash
+cp ~/festivalapp/deploy/healthcheck.sh ~/healthcheck.sh
+chmod +x ~/healthcheck.sh
+sudo cp ~/festivalapp/deploy/festivalapp-health.service ~/festivalapp/deploy/festivalapp-health.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now festivalapp-health.timer
+```
+
+```bash
+# Loopt de timer?
+systemctl list-timers festivalapp-health.timer
+# Nu meteen één controle doen
+sudo systemctl start festivalapp-health.service
+# Wat zeiden de laatste controles?
+journalctl -u festivalapp-health -n 20
+```
+
+Na een wijziging aan `deploy/healthcheck.sh` op `main` kopieer je hem opnieuw naar `~/healthcheck.sh`
+(de auto-deploy doet dat niet, net als bij `auto-deploy.sh`).
+
 ## Handig
 
 ```bash

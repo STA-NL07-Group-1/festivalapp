@@ -1,11 +1,11 @@
-// WebSocket-hub. De client verbindt met /ws?token=<access-token>&festival=<festival-id>.
+// WebSocket-hub. De client vraagt eerst een eenmalig ticket aan (POST /realtime/ticket, zie wsTickets.ts)
+// en verbindt daarna met /ws?ticket=<ticket>&festival=<festival-id>. Het access-token komt zo niet in de URL.
 // Zonder festival kiest de server het meest logische festival, net als bij de API.
 // Clients sturen alleen "ping"; alle wijzigingen lopen via REST, zodat
 // autorisatie op één plek zit. De server stuurt events als { type, data }.
 import type { IncomingMessage, Server } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { UUID_RE, type Role } from './http.ts'
-import { verifyAccessToken } from './security.ts'
 
 export interface Realtime {
   toUser(userId: string, type: string, data: unknown): void
@@ -46,7 +46,12 @@ const MAX_SOCKETS_PER_USER = 5
 
 export function attachRealtime(
   server: Server,
-  options: { jwtSecret: Uint8Array; corsOrigins: string[]; resolve: ResolveSocket },
+  options: {
+    corsOrigins: string[]
+    resolve: ResolveSocket
+    /** Ticket inwisselen voor de gebruiker; null = onbekend, al gebruikt of verlopen */
+    redeemTicket: (ticket: string) => { id: string; exp: number } | null
+  },
 ): Realtime {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 })
   const clients = new Map<string, Set<Client>>()
@@ -64,15 +69,18 @@ export function attachRealtime(
     const festival = url.searchParams.get('festival')
     if (festival && !UUID_RE.test(festival)) return reject(403)
 
-    verifyAccessToken(url.searchParams.get('token') ?? '', options.jwtSecret)
-      .then(async (user) => {
-        // Zelfde regels als bij de API: geblokkeerd of geen toegang tot dit festival → geen verbinding
-        const access = await options.resolve(user.id, festival).catch(() => null)
+    const user = options.redeemTicket(url.searchParams.get('ticket') ?? '')
+    if (!user || user.exp * 1000 <= Date.now()) return reject(401)
+    // Zelfde regels als bij de API: geblokkeerd of geen toegang tot dit festival → geen verbinding
+    options
+      .resolve(user.id, festival)
+      .catch(() => null)
+      .then((access) => {
         if (!access) return reject(403)
         if ((clients.get(user.id)?.size ?? 0) >= MAX_SOCKETS_PER_USER) return reject(403)
         wss.handleUpgrade(req, socket, head, (ws) => register(ws, user, access))
       })
-      .catch(() => reject(401))
+      .catch(() => reject(403))
   })
 
   function register(socket: WebSocket, user: { id: string; exp: number }, access: { festivalId: string | null; role: Role }) {

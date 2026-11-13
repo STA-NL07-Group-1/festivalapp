@@ -17,6 +17,9 @@ export const toMe = (r: Row, ctx: { user: { role: string; platformRole: string |
   locale: r.locale,
   shareLocation: r.share_location,
   shareTimetable: r.share_timetable,
+  notifyChat: r.notify_chat,
+  notifyTimetable: r.notify_timetable,
+  notifyAnnouncements: r.notify_announcements,
 })
 
 export const toAdminUser = (r: Row) => ({
@@ -79,6 +82,7 @@ export const toMessage = (r: Row) => ({
   body: r.body,
   createdAt: iso(r.created_at),
   readAt: iso(r.read_at),
+  clientId: r.client_id ?? null,
 })
 
 export const toStage = (r: Row) => ({

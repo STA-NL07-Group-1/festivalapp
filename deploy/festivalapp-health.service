@@ -1,0 +1,8 @@
+[Unit]
+Description=Festivalapp: controleren of de site werkt
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/home/ubuntu/healthcheck.sh

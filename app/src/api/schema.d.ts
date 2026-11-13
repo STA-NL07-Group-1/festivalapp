@@ -383,7 +383,10 @@ export interface paths {
         /** Berichten in je gesprek met een vriend */
         get: operations["listMessages"];
         put?: never;
-        /** Stuur een bericht naar een vriend */
+        /**
+         * Stuur een bericht naar een vriend
+         * @description Geef met `clientId` een eigen id mee. Wordt hetzelfde bericht opnieuw verstuurd (bijvoorbeeld bij slecht bereik), dan krijg je het bestaande bericht terug met 200 en wordt het niet nog een keer afgeleverd.
+         */
         post: operations["sendMessage"];
         delete?: never;
         options?: never;
@@ -530,6 +533,26 @@ export interface paths {
         get: operations["getCrowdLevels"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/realtime/ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Eenmalig ticket voor de WebSocket
+         * @description Gebruik het binnen 30 seconden in `/ws?ticket=…`. Daarna, of na één keer gebruiken, werkt het niet meer.
+         */
+        post: operations["createRealtimeTicket"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1265,6 +1288,12 @@ export interface components {
             locale: components["schemas"]["Locale"];
             shareLocation: boolean;
             shareTimetable: boolean;
+            /** @description Pushmelding bij een chatbericht */
+            notifyChat: boolean;
+            /** @description Pushmelding als een optreden in je timetable wijzigt */
+            notifyTimetable: boolean;
+            /** @description Pushmelding bij mededelingen; noodberichten krijg je altijd */
+            notifyAnnouncements: boolean;
         };
         UpdateMeRequest: {
             displayName?: string;
@@ -1272,6 +1301,9 @@ export interface components {
             locale?: components["schemas"]["Locale"];
             shareLocation?: boolean;
             shareTimetable?: boolean;
+            notifyChat?: boolean;
+            notifyTimetable?: boolean;
+            notifyAnnouncements?: boolean;
         };
         FriendCode: {
             code: string;
@@ -1337,9 +1369,24 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             readAt?: string | null;
+            /**
+             * Format: uuid
+             * @description Het id dat de app meegaf; zo herkent de app zijn eigen bericht uit de wachtrij
+             */
+            clientId?: string | null;
         };
         SendMessage: {
             body: string;
+            /**
+             * Format: uuid
+             * @description Eigen id van de app; hetzelfde id twee keer = hetzelfde bericht
+             */
+            clientId?: string;
+        };
+        RealtimeTicket: {
+            ticket: string;
+            /** @description Seconden */
+            expiresIn: number;
         };
         Stage: {
             /** Format: uuid */
@@ -2575,6 +2622,15 @@ export interface operations {
                     "application/json": components["schemas"]["Message"];
                 };
             };
+            /** @description Dit bericht (zelfde `clientId`) was al verstuurd; dit is het bestaande bericht */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Message"];
+                };
+            };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
@@ -2871,6 +2927,34 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    createRealtimeTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ticket */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "ticket": "voorbeeld-ticket",
+                     *       "expiresIn": 30
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RealtimeTicket"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     getPushPublicKey: {

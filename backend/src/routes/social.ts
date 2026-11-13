@@ -7,7 +7,8 @@ import { toFriend, toFriendLocation, toMe, toMessage, toPin } from './mappers.ts
 
 const FRIEND_CODE_MINUTES = 10
 const LOCATION_TTL_MINUTES = 10
-const ME_COLUMNS = 'id, email, email_verified_at, display_name, theme, locale, share_location, share_timetable'
+const ME_COLUMNS =
+  'id, email, email_verified_at, display_name, theme, locale, share_location, share_timetable, notify_chat, notify_timetable, notify_announcements'
 
 export function socialRoutes(r: Router, deps: Deps): void {
   const { db } = deps
@@ -28,6 +29,9 @@ export function socialRoutes(r: Router, deps: Deps): void {
       locale: string
       shareLocation: boolean
       shareTimetable: boolean
+      notifyChat: boolean
+      notifyTimetable: boolean
+      notifyAnnouncements: boolean
     }>
     if (body.displayName !== undefined && !body.displayName.trim()) throw badRequest('Het veld "displayName" is te kort.')
     // Vaste kolomnamen; waarden altijd als parameter
@@ -37,6 +41,9 @@ export function socialRoutes(r: Router, deps: Deps): void {
       locale: 'locale',
       shareLocation: 'share_location',
       shareTimetable: 'share_timetable',
+      notifyChat: 'notify_chat',
+      notifyTimetable: 'notify_timetable',
+      notifyAnnouncements: 'notify_announcements',
     }
     const sets: string[] = []
     const values: unknown[] = [user.id]
@@ -252,23 +259,35 @@ export function socialRoutes(r: Router, deps: Deps): void {
     const user = requireUser(ctx)
     const other = uuidParam(ctx, 'userId')
     if (!(await areFriends(db, user.id, other))) throw notFound()
-    const { body } = ctx.body as { body: string }
+    const { body, clientId } = ctx.body as { body: string; clientId?: string }
     if (!body.trim()) throw badRequest('Het veld "body" is te kort.')
     const { rows } = await db.query(
-      'INSERT INTO messages (sender_id, recipient_id, body) VALUES ($1, $2, $3) RETURNING *',
-      [user.id, other, body.trim()],
+      `INSERT INTO messages (sender_id, recipient_id, body, client_id) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (sender_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
+       RETURNING *`,
+      [user.id, other, body.trim(), clientId ?? null],
     )
-    const message = toMessage(rows[0]!)
+    if (!rows[0]) {
+      // Dit bericht kwam al eerder binnen (opnieuw verstuurd bij slecht bereik): het bestaande teruggeven,
+      // zonder het nog een keer naar de vriend te sturen of een pushmelding te geven
+      const existing = await db.query('SELECT * FROM messages WHERE sender_id = $1 AND client_id = $2', [user.id, clientId])
+      return { status: 200, body: toMessage(existing.rows[0]!) }
+    }
+    const message = toMessage(rows[0])
     deps.realtime.toUsers([other, user.id], 'chat.message', message)
     if (!deps.realtime.isOnline(other)) {
       const sender = await db.query<{ display_name: string }>('SELECT display_name FROM users WHERE id = $1', [user.id])
-      void deps.push.toUsers([other], {
-        title: sender.rows[0]?.display_name ?? 'Nieuw bericht',
-        // Geen berichtinhoud in de melding: die kan op het vergrendelscherm staan
-        body: 'Stuurde je een bericht',
-        tag: `chat-${user.id}`,
-        url: `/?chat=${user.id}`,
-      })
+      void deps.push.toUsers(
+        [other],
+        {
+          title: sender.rows[0]?.display_name ?? 'Nieuw bericht',
+          // Geen berichtinhoud in de melding: die kan op het vergrendelscherm staan
+          body: 'Stuurde je een bericht',
+          tag: `chat-${user.id}`,
+          url: `/?chat=${user.id}`,
+        },
+        'chat',
+      )
     }
     return { status: 201, body: message }
   })

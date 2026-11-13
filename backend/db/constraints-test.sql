@@ -163,6 +163,14 @@ INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at) VALUES ('000
 SELECT pg_temp.expect_fail('dubbele maillink',
     $q$INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at) VALUES ('00000000-0000-0000-0000-000000000002', 'verify', repeat('c', 64), now() + interval '1 day')$q$);
 
+-- --- chat: hetzelfde bericht niet twee keer ---------------------------------
+INSERT INTO messages (sender_id, recipient_id, body, client_id) VALUES
+    ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'Hoi', '00000000-0000-4000-8000-00000000c001');
+SELECT pg_temp.expect_fail('zelfde client_id twee keer van dezelfde afzender',
+    $q$INSERT INTO messages (sender_id, recipient_id, body, client_id) VALUES ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'Hoi', '00000000-0000-4000-8000-00000000c001')$q$);
+SELECT pg_temp.expect_fail('meldingsvoorkeur leeg',
+    $q$UPDATE users SET notify_chat = NULL WHERE id = '00000000-0000-0000-0000-000000000001'$q$);
+
 -- --- audit_log ---------------------------------------------------------------
 INSERT INTO audit_log (actor_id, action) VALUES ('00000000-0000-0000-0000-000000000001', 'auth.login');
 SELECT pg_temp.expect_fail('audit_log wijzigen',

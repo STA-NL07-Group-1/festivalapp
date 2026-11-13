@@ -23,8 +23,10 @@ info:
     rollen over alle festivals heen (`x-platform-roles`): `eigenaar` en `sudo`. Die mogen bij elk
     festival, met de rechten van een beheerder. Alleen `sudo` wijst eigenaren en beheerders aan.
 
-    **Realtime.** Na het inloggen opent de app een WebSocket op
-    `/ws?token=<access-token>&festival=<festival-id>`. Je krijgt alleen berichten van dat festival.
+    **Realtime.** Na het inloggen vraagt de app een eenmalig ticket aan (`POST /realtime/ticket`) en
+    opent daarmee een WebSocket op `/ws?ticket=<ticket>&festival=<festival-id>`. Het access-token komt
+    zo niet in de URL (en dus niet in logs). Een ticket is 30 seconden geldig en werkt één keer.
+    Je krijgt alleen berichten van dat festival.
     De server stuurt berichten als JSON: `{ "type": "...", "data": { ... } }`. Types:
     `friend.location`, `friend.location.removed`, `friend.added`, `friend.removed`, `pin.created`,
     `chat.message`, `timetable.update`, `announcement`, `crowd.update`,
@@ -605,6 +607,10 @@ paths:
       tags: [chat]
       operationId: sendMessage
       summary: Stuur een bericht naar een vriend
+      description: >-
+        Geef met `clientId` een eigen id mee. Wordt hetzelfde bericht opnieuw verstuurd (bijvoorbeeld bij
+        slecht bereik), dan krijg je het bestaande bericht terug met 200 en wordt het niet nog een keer
+        afgeleverd.
       requestBody:
         required: true
         content:
@@ -623,6 +629,12 @@ paths:
                 body: Ben er over 5 min
                 createdAt: '2026-06-20T20:46:00Z'
                 readAt: null
+                clientId: 0b7f3c2e-9a41-4d6b-8e15-5c2a9d7f1e33
+        '200':
+          description: Dit bericht (zelfde `clientId`) was al verstuurd; dit is het bestaande bericht
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -820,6 +832,22 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   # ---------------------------------------------------------------- notifications
+  /realtime/ticket:
+    post:
+      tags: [notifications]
+      operationId: createRealtimeTicket
+      summary: Eenmalig ticket voor de WebSocket
+      description: Gebruik het binnen 30 seconden in `/ws?ticket=…`. Daarna, of na één keer gebruiken, werkt het niet meer.
+      responses:
+        '201':
+          description: Ticket
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RealtimeTicket' }
+              example: { ticket: voorbeeld-ticket, expiresIn: 30 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
   /push-subscriptions/public-key:
     get:
       tags: [notifications]
@@ -1910,7 +1938,8 @@ components:
       x-table: users
       additionalProperties: false
       x-computed: [role, festivalId]
-      required: [id, email, emailVerified, displayName, role, platformRole, festivalId, theme, locale, shareLocation, shareTimetable]
+      required:
+        [id, email, emailVerified, displayName, role, platformRole, festivalId, theme, locale, shareLocation, shareTimetable, notifyChat, notifyTimetable, notifyAnnouncements]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
@@ -1927,6 +1956,9 @@ components:
         locale: { $ref: '#/components/schemas/Locale' }
         shareLocation: { type: boolean }
         shareTimetable: { type: boolean }
+        notifyChat: { type: boolean, description: Pushmelding bij een chatbericht }
+        notifyTimetable: { type: boolean, description: Pushmelding als een optreden in je timetable wijzigt }
+        notifyAnnouncements: { type: boolean, description: 'Pushmelding bij mededelingen; noodberichten krijg je altijd' }
     UpdateMeRequest:
       type: object
       additionalProperties: false
@@ -1937,6 +1969,9 @@ components:
         locale: { $ref: '#/components/schemas/Locale' }
         shareLocation: { type: boolean }
         shareTimetable: { type: boolean }
+        notifyChat: { type: boolean }
+        notifyTimetable: { type: boolean }
+        notifyAnnouncements: { type: boolean }
 
     # --- friends
     FriendCode:
@@ -2021,12 +2056,24 @@ components:
         body: { type: string, description: Platte tekst; de app toont dit nooit als HTML. }
         createdAt: { type: string, format: date-time }
         readAt: { type: [string, 'null'], format: date-time }
+        clientId:
+          type: [string, 'null']
+          format: uuid
+          description: Het id dat de app meegaf; zo herkent de app zijn eigen bericht uit de wachtrij
     SendMessage:
       type: object
       additionalProperties: false
       required: [body]
       properties:
         body: { type: string, minLength: 1, maxLength: 1000 }
+        clientId: { type: string, format: uuid, description: 'Eigen id van de app; hetzelfde id twee keer = hetzelfde bericht' }
+    RealtimeTicket:
+      type: object
+      additionalProperties: false
+      required: [ticket, expiresIn]
+      properties:
+        ticket: { type: string }
+        expiresIn: { type: integer, description: Seconden }
 
     # --- timetable
     Stage:

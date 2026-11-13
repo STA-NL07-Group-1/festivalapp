@@ -40,7 +40,11 @@ interface Session {
   login(email: string, password: string): Promise<void>
   register(input: { ticketCode: string; email: string; password: string; displayName: string }): Promise<void>
   logout(): Promise<void>
-  updateMe(patch: Partial<Pick<Me, 'displayName' | 'theme' | 'locale' | 'shareLocation' | 'shareTimetable'>>): Promise<void>
+  updateMe(
+    patch: Partial<
+      Pick<Me, 'displayName' | 'theme' | 'locale' | 'shareLocation' | 'shareTimetable' | 'notifyChat' | 'notifyTimetable' | 'notifyAnnouncements'>
+    >,
+  ): Promise<void>
   deleteAccount(): Promise<void>
   /** Wachtwoord wijzigen; andere apparaten worden uitgelogd, dit apparaat krijgt nieuwe tokens */
   changePassword(currentPassword: string, newPassword: string): Promise<void>

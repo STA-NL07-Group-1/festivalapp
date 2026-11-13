@@ -1,5 +1,5 @@
 // WebSocket met automatisch opnieuw verbinden (met oplopende wachttijd).
-import { API_URL, currentFestival, getAccessToken } from '../api/client'
+import { API_URL, api, currentFestival } from '../api/client'
 
 type Listener = (data: unknown) => void
 
@@ -22,14 +22,20 @@ export function connectRealtime(): RealtimeConnection {
 
   async function open() {
     if (closed) return
-    const token = await getAccessToken()
-    if (!token || closed) return scheduleRetry()
+    // Eerst een eenmalig ticket ophalen: zo staat het access-token niet in de WebSocket-URL (en dus niet in logs)
+    let ticket: string
+    try {
+      ticket = (await api.post<{ ticket: string; expiresIn: number }>('/realtime/ticket')).ticket
+    } catch {
+      return scheduleRetry()
+    }
+    if (closed) return
     // API_URL kan absoluut zijn (http://localhost:3000) of relatief (/api achter de webserver)
     const base = new URL(API_URL, window.location.origin)
     base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:'
     // Alleen berichten van het gekozen festival
     const festival = currentFestival()
-    const url = `${base.href.replace(/\/$/, '')}/ws?token=${encodeURIComponent(token)}${festival ? `&festival=${festival}` : ''}`
+    const url = `${base.href.replace(/\/$/, '')}/ws?ticket=${encodeURIComponent(ticket)}${festival ? `&festival=${festival}` : ''}`
     socket = new WebSocket(url)
     socket.onopen = () => {
       attempt = 0

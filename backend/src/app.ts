@@ -20,6 +20,7 @@ import { loadAccess, pickFestival } from './festival.ts'
 import { createMailer, type Mailer } from './mail.ts'
 import type { Push } from './push.ts'
 import { noRealtime, type Realtime } from './realtime.ts'
+import { createTicketStore, type TicketStore } from './wsTickets.ts'
 import { sha256, verifyAccessToken } from './security.ts'
 import { knownOperation, validateBody } from './validation.ts'
 import { registerRoutes } from './routes/index.ts'
@@ -32,6 +33,8 @@ export interface Deps {
   /** Wordt na het starten van de server ingevuld */
   realtime: Realtime
   limiter: RateLimiter
+  /** Eenmalige tickets voor /ws (zie wsTickets.ts) */
+  wsTickets: TicketStore
 }
 
 function clientIp(req: IncomingMessage): string {
@@ -49,8 +52,16 @@ function clientIp(req: IncomingMessage): string {
   return req.socket.remoteAddress ?? 'onbekend'
 }
 
-export function createApp(deps: Omit<Deps, 'realtime' | 'limiter' | 'mailer'> & Partial<Pick<Deps, 'realtime' | 'limiter' | 'mailer'>>) {
-  const fullDeps: Deps = { realtime: noRealtime, limiter: new RateLimiter(), mailer: createMailer(deps.config.mail), ...deps }
+export function createApp(
+  deps: Omit<Deps, 'realtime' | 'limiter' | 'mailer' | 'wsTickets'> & Partial<Pick<Deps, 'realtime' | 'limiter' | 'mailer' | 'wsTickets'>>,
+) {
+  const fullDeps: Deps = {
+    realtime: noRealtime,
+    limiter: new RateLimiter(),
+    mailer: createMailer(deps.config.mail),
+    wsTickets: createTicketStore(),
+    ...deps,
+  }
   const router = new Router()
   registerRoutes(router, fullDeps)
 
@@ -88,8 +99,11 @@ export function createApp(deps: Omit<Deps, 'realtime' | 'limiter' | 'mailer'> & 
       const token = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? '')?.[1]
       if (!token) throw unauthorized()
       let userId: string
+      let tokenExp: number
       try {
-        userId = (await verifyAccessToken(token, fullDeps.config.jwtSecret)).id
+        const payload = await verifyAccessToken(token, fullDeps.config.jwtSecret)
+        userId = payload.id
+        tokenExp = payload.exp
       } catch {
         throw unauthorized()
       }
@@ -102,7 +116,7 @@ export function createApp(deps: Omit<Deps, 'realtime' | 'limiter' | 'mailer'> & 
       if (requested && !UUID_RE.test(requested)) throw badRequest('Onbekend festival.')
       const festival = pickFestival(access, requested)
       ctx.festivalId = festival?.id ?? null
-      ctx.user = { id: userId, role: festival?.role ?? 'bezoeker', platformRole: access.platformRole }
+      ctx.user = { id: userId, role: festival?.role ?? 'bezoeker', platformRole: access.platformRole, tokenExp }
       // eslint-disable-next-line security/detect-possible-timing-attacks -- idem; de sleutel zelf wordt gehasht vergeleken
     } else if (auth === 'iot') {
       const key = req.headers['x-device-key']

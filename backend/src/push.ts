@@ -12,10 +12,33 @@ export interface PushMessage {
   urgent?: boolean
 }
 
+/** Soort melding; iedereen kan elke soort in Instellingen uitzetten (users.notify_*) */
+export type PushKind = 'chat' | 'timetable' | 'announcement'
+
 export interface Push {
   enabled: boolean
   publicKey: string | null
-  toUsers(userIds: string[], message: PushMessage): Promise<void>
+  /** Met `kind` krijgen alleen mensen die die soort aan hebben de melding. Een urgente melding (nood) gaat altijd door. */
+  toUsers(userIds: string[], message: PushMessage, kind?: PushKind): Promise<void>
+}
+
+// Vaste kolomnamen: nooit iets van buiten in de query
+const PREFERENCE_COLUMN: Record<PushKind, string> = {
+  chat: 'notify_chat',
+  timetable: 'notify_timetable',
+  announcement: 'notify_announcements',
+}
+
+/** Push-abonnementen van deze gebruikers, zonder wie deze soort melding heeft uitgezet */
+export async function pushSubscriptionsFor(db: Db, userIds: string[], kind?: PushKind, urgent = false) {
+  const preference = kind && !urgent ? `AND u.${PREFERENCE_COLUMN[kind]}` : ''
+  const { rows } = await db.query<{ id: string; endpoint: string; p256dh: string; auth: string }>(
+    `SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
+       FROM push_subscriptions ps JOIN users u ON u.id = ps.user_id
+      WHERE ps.user_id = ANY($1) ${preference}`,
+    [userIds],
+  )
+  return rows
 }
 
 export function createPush(db: Db, vapid: { publicKey: string; privateKey: string; subject: string } | null): Push {
@@ -46,10 +69,9 @@ export function createPush(db: Db, vapid: { publicKey: string; privateKey: strin
   return {
     enabled: true,
     publicKey: vapid.publicKey,
-    async toUsers(userIds, message) {
+    async toUsers(userIds, message, kind) {
       if (userIds.length === 0) return
-      const { rows } = await db.query('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ANY($1)', [userIds])
-      await sendAll(rows, message)
+      await sendAll(await pushSubscriptionsFor(db, userIds, kind, message.urgent), message)
     },
   }
 }

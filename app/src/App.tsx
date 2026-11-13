@@ -6,6 +6,7 @@ import { FestivalBar, NoFestivalScreen } from './components/festival'
 import { Toast } from './components/ui'
 import { BellIcon, CalendarIcon, MapIcon, MenuIcon, UsersIcon } from './components/icons'
 import { useI18n } from './i18n'
+import { flushOutbox } from './lib/outbox'
 import { useAsync } from './lib/useAsync'
 import { AuthScreen, ResetPasswordScreen } from './screens/AuthScreen'
 import { ChatScreen } from './screens/ChatScreen'
@@ -119,6 +120,11 @@ function Shell() {
       [setAnnouncements],
     ),
   )
+
+  // Weer bereik: chatberichten uit de wachtrij alsnog versturen, ook als de chat niet open staat
+  useEffect(() => {
+    if (online) void flushOutbox()
+  }, [online])
 
   // Chat openen vanuit een pushmelding
   useEffect(() => {

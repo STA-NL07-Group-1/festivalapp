@@ -19,6 +19,8 @@ export interface AuthUser {
   /** Rol in het festival van dit verzoek */
   role: Role
   platformRole: PlatformRole | null
+  /** Verloopmoment van het access-token (seconden sinds 1970), voor het WebSocket-ticket */
+  tokenExp?: number
 }
 
 export interface Context {
