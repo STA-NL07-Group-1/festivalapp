@@ -489,6 +489,29 @@ describe.skipIf(!databaseUrl)('backend', () => {
       const res = await api('POST', '/admin/tickets/import', { token: admin.accessToken, body })
       expect(res.body).toEqual({ imported: 1, skipped: 0 })
     })
+
+    it('ticketteller: alleen aantallen van het eigen festival, niet voor bezoekers', async () => {
+      const visitor = await login('anna@festival.test')
+      expect((await api('GET', '/admin/tickets/stats', { token: visitor.accessToken })).status).toBe(403)
+
+      const org = await login('organisatie@festival.test')
+      const before = await api('GET', '/admin/tickets/stats', { token: org.accessToken, festival: FIRST_FESTIVAL })
+      expect(before.status).toBe(200)
+      expect(before.body.total).toBeGreaterThanOrEqual(50)
+      expect(before.body.total).toBe(before.body.linked + before.body.available + before.body.unusable)
+      expect(JSON.stringify(before.body)).not.toMatch(/DEMO-|@/)
+
+      await register('Lotte')
+      const after = await api('GET', '/admin/tickets/stats', { token: org.accessToken, festival: FIRST_FESTIVAL })
+      expect(after.body.linked).toBe(before.body.linked + 1)
+      expect(after.body.available).toBe(before.body.available - 1)
+
+      // Het tweede festival telt apart: daar zijn alleen de tien TWEE-tickets
+      const admin2 = await login('beheerder2@festival.test')
+      const second = await api('GET', '/admin/tickets/stats', { token: admin2.accessToken, festival: SECOND_FESTIVAL })
+      expect(second.status).toBe(200)
+      expect(second.body.total).toBe(10)
+    })
   })
 
   describe('gebruikers beheren', () => {

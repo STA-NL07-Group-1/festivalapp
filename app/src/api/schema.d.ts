@@ -821,6 +821,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/tickets/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Aantal tickets van het gekozen festival
+         * @description Alleen aantallen, geen ticketcodes of namen.
+         */
+        get: operations["getTicketStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/festivals": {
         parameters: {
             query?: never;
@@ -1626,6 +1646,21 @@ export interface components {
         };
         ChatbotResponse: {
             answer: string;
+        };
+        TicketStats: {
+            /** @description Alle tickets van dit festival */
+            total: number;
+            /** @description Gekoppeld aan een account */
+            linked: number;
+            /** @description Geldig, nog niet gebruikt en niet verlopen */
+            available: number;
+            /** @description Verlopen of ingetrokken */
+            unusable: number;
+            byType: {
+                ticketType: string;
+                total: number;
+                linked: number;
+            }[];
         };
         TicketImport: {
             tickets: {
@@ -3388,6 +3423,28 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getTicketStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aantallen */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketStats"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };

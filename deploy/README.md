@@ -25,7 +25,7 @@ Alle commands voor dagelijks gebruik staan in Notion op de pagina **Belangrijke 
 2. Kies **Cloudflared**, naam `festivalapp`.
 3. Kopieer het **token**: het lange stuk na `--token` in het installatiecommando. Installeer niets; de
    container doet dat.
-4. Bij **Public hostname**: subdomain `festivalapp`, domain `nulllabx.com`, type **HTTP**, URL `web:80`.
+4. Bij **Public hostname**: subdomain leeg laten, domain `festivalbuddy.nl`, type **HTTP**, URL `web:80`.
    Cloudflare maakt het DNS-record zelf aan.
 
 ## Eenmalig: op de server
@@ -55,7 +55,8 @@ De rol bij `create-admin.ts` (`beheerder`, `organisatie`, `ehbo` of `beveiliging
 festival: standaard het eerste, of het festival waarvan je de id meegeeft met `-e ADMIN_FESTIVAL=...`.
 Verdere teamleden voeg je toe in het portal, op de pagina Team.
 
-Daarna: tickets importeren via `https://festivalapp.nulllabx.com/beheer` → Tickets.
+Daarna: tickets importeren via `https://festivalbuddy.nl/beheer` → Tickets. Op die pagina zie je ook hoeveel
+tickets er zijn en hoeveel al aan een account hangen.
 
 ### Automatisch bijwerken installeren
 

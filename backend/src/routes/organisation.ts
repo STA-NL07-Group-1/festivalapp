@@ -206,4 +206,32 @@ export function organisationRoutes(r: Router, deps: Deps): void {
     await audit(db, user.id, 'ticket.import', undefined, { imported, total: tickets.length })
     return { status: 200, body: { imported, skipped: tickets.length - imported } }
   })
+
+  // Alleen aantallen van het gekozen festival: geen codes, geen namen
+  r.get('/admin/tickets/stats', { operationId: 'getTicketStats', roles: ORGANISERS }, async (ctx) => {
+    const festivalId = requireFestival(ctx)
+    const { rows } = await db.query<{ ticket_type: string; total: number; linked: number; available: number; unusable: number }>(
+      `SELECT ticket_type,
+              count(*)::int AS total,
+              count(*) FILTER (WHERE status = 'gekoppeld')::int AS linked,
+              count(*) FILTER (WHERE status = 'geldig' AND user_id IS NULL AND valid_until > now())::int AS available,
+              count(*) FILTER (WHERE status = 'ingetrokken' OR (status = 'geldig' AND valid_until <= now()))::int AS unusable
+         FROM tickets
+        WHERE festival_id = $1
+        GROUP BY ticket_type
+        ORDER BY ticket_type`,
+      [festivalId],
+    )
+    const sum = (key: 'total' | 'linked' | 'available' | 'unusable') => rows.reduce((n, row) => n + row[key], 0)
+    return {
+      status: 200,
+      body: {
+        total: sum('total'),
+        linked: sum('linked'),
+        available: sum('available'),
+        unusable: sum('unusable'),
+        byType: rows.map((row) => ({ ticketType: row.ticket_type, total: row.total, linked: row.linked })),
+      },
+    }
+  })
 }

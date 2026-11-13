@@ -295,6 +295,22 @@ label {
   align-items: center;
   gap: 8px;
 }
+.ticket-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+.ticket-count {
+  gap: 2px;
+}
+.ticket-counts + .page-header,
+.ticket-counts + .table + .page-header {
+  margin-top: 32px;
+}
+.ticket-count strong {
+  font-size: 1.8rem;
+  font-variant-numeric: tabular-nums;
+}
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
