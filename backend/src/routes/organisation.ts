@@ -4,6 +4,7 @@ import { audit } from '../db.ts'
 import { ORGANISERS, STAFF, badRequest, notFound, requireFestival, requireUser, uuidParam, type Router } from '../http.ts'
 import { festivalUserIds } from '../festival.ts'
 import { sha256 } from '../security.ts'
+import { TICKET_SECONDS } from '../wsTickets.ts'
 import { PERFORMANCE_COLUMNS, toAnnouncement, toPerformance, toSos } from './mappers.ts'
 
 export function organisationRoutes(r: Router, deps: Deps): void {
@@ -12,6 +13,14 @@ export function organisationRoutes(r: Router, deps: Deps): void {
   r.get('/health', { operationId: 'getHealth', auth: 'none' }, async () => {
     await db.query('SELECT 1')
     return { status: 200, body: { status: 'ok' } }
+  })
+
+  // ------------------------------------------------------------- realtime
+  // Eenmalig ticket voor de WebSocket, zodat het access-token niet in de URL hoeft (zie wsTickets.ts)
+  r.post('/realtime/ticket', { operationId: 'createRealtimeTicket', rateLimit: { limit: 30, windowMs: 60_000 } }, async (ctx) => {
+    const user = requireUser(ctx)
+    const ticket = deps.wsTickets.issue({ id: user.id, tokenExp: user.tokenExp ?? 0 })
+    return { status: 201, body: { ticket, expiresIn: TICKET_SECONDS } }
   })
 
   // ------------------------------------------------------------- push
@@ -63,13 +72,18 @@ export function organisationRoutes(r: Router, deps: Deps): void {
     deps.realtime.toFestival(festivalId, 'announcement', announcement)
     if (b.level !== 'info') {
       // Alleen naar wie bij dit festival hoort: bezoekers met een ticket en het personeel
-      void deps.push.toUsers(await festivalUserIds(db, festivalId), {
-        title: b.level === 'nood' ? `⚠️ ${b.titleNl}` : b.titleNl,
-        body: b.bodyNl,
-        tag: `announcement-${announcement.id}`,
-        url: '/?tab=meldingen',
-        urgent: b.level === 'nood',
-      })
+      // Noodberichten (urgent) gaan ook naar wie mededelingen heeft uitgezet
+      void deps.push.toUsers(
+        await festivalUserIds(db, festivalId),
+        {
+          title: b.level === 'nood' ? `⚠️ ${b.titleNl}` : b.titleNl,
+          body: b.bodyNl,
+          tag: `announcement-${announcement.id}`,
+          url: '/?tab=meldingen',
+          urgent: b.level === 'nood',
+        },
+        'announcement',
+      )
     }
     return { status: 201, body: announcement }
   })
@@ -184,6 +198,7 @@ export function organisationRoutes(r: Router, deps: Deps): void {
         tag: `performance-${id}`,
         url: '/?tab=timetable',
       },
+      'timetable',
     )
     return { status: 200, body: performance }
   })

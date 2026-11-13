@@ -12,8 +12,8 @@ const push = createPush(db, config.vapid)
 const { handler, deps } = createApp({ db, config, push })
 const server = createHttpServer(handler)
 deps.realtime = attachRealtime(server, {
-  jwtSecret: config.jwtSecret,
   corsOrigins: config.corsOrigins,
+  redeemTicket: deps.wsTickets.redeem,
   resolve: (userId, festivalId) => resolveSocket(db, userId, festivalId),
 })
 

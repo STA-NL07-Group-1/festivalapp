@@ -317,6 +317,16 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
           onChange={(v) => void (v ? enablePush() : disablePush()).then(setPush).catch(() => setToast(t('common.error')))}
         />
         {pushMessage[push] && <p className="muted small">{pushMessage[push]}</p>}
+        <p className="label">{t('settings.notifyAbout')}</p>
+        {/* !== false: een oud profiel uit de offline opslag heeft deze velden nog niet (dan staan ze aan) */}
+        <Toggle label={t('settings.notifyChat')} checked={me.notifyChat !== false} onChange={(v) => void save({ notifyChat: v })} />
+        <Toggle label={t('settings.notifyTimetable')} checked={me.notifyTimetable !== false} onChange={(v) => void save({ notifyTimetable: v })} />
+        <Toggle
+          label={t('settings.notifyAnnouncements')}
+          checked={me.notifyAnnouncements !== false}
+          onChange={(v) => void save({ notifyAnnouncements: v })}
+        />
+        <p className="muted small">{t('settings.notifyEmergency')}</p>
       </section>
       <Toast message={toast} onDone={() => setToast(null)} />
     </Screen>

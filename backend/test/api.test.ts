@@ -11,7 +11,7 @@ import { loadConfig } from '../src/config.ts'
 import { createPool } from '../src/db.ts'
 import { resolveSocket } from '../src/festival.ts'
 import type { Mail } from '../src/mail.ts'
-import { createPush } from '../src/push.ts'
+import { createPush, pushSubscriptionsFor, type PushKind } from '../src/push.ts'
 import { attachRealtime } from '../src/realtime.ts'
 import { migrate } from '../scripts/migrate.ts'
 import { DEMO_PASSWORD, FIRST_FESTIVAL, SECOND_FESTIVAL, seed } from '../scripts/seed.ts'
@@ -56,8 +56,8 @@ beforeAll(async () => {
   const { handler, deps } = createApp({ db, config, push: createPush(db, null), mailer })
   const server = createHttpServer(handler)
   deps.realtime = attachRealtime(server, {
-    jwtSecret: config.jwtSecret,
     corsOrigins: config.corsOrigins,
+    redeemTicket: deps.wsTickets.redeem,
     resolve: (userId, festivalId) => resolveSocket(db, userId, festivalId),
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -113,6 +113,13 @@ async function register(name: string) {
   expect(res.status, JSON.stringify(res.body)).toBe(201)
   const me = await api('GET', '/me', { token: res.body.accessToken })
   return { ...res.body, id: me.body.id as string, ticketCode }
+}
+
+/** WebSocket-adres met een vers eenmalig ticket (het access-token zelf gaat niet in de URL) */
+async function wsUrl(token: string, festival?: string) {
+  const res = await api('POST', '/realtime/ticket', { token })
+  expect(res.status).toBe(201)
+  return `${base.replace('http', 'ws')}/ws?ticket=${res.body.ticket}${festival ? `&festival=${festival}` : ''}`
 }
 
 async function befriend(a: { accessToken: string }, b: { accessToken: string }) {
@@ -383,6 +390,65 @@ describe.skipIf(!databaseUrl)('backend', () => {
       expect((await api('POST', `/messages/${a.id}`, { token: stranger.accessToken, body: { body: 'hallo' } })).status).toBe(404)
       expect((await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { body: 'x'.repeat(1001) } })).status).toBe(400)
     })
+
+    it('hetzelfde bericht opnieuw versturen (zelfde clientId) levert één bericht op', async () => {
+      const a = await register('Zeno')
+      const b = await register('Ruben')
+      await befriend(a, b)
+      const clientId = '0b7f3c2e-9a41-4d6b-8e15-5c2a9d7f1e33'
+      const first = await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { body: 'Ben bij het podium', clientId } })
+      expect(first.status).toBe(201)
+      expect(first.body.clientId).toBe(clientId)
+      // Bij slecht bereik stuurt de app het nog een keer: zelfde bericht terug, niet opnieuw opgeslagen
+      const again = await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { body: 'Ben bij het podium', clientId } })
+      expect(again.status).toBe(200)
+      expect(again.body.id).toBe(first.body.id)
+      // Een ander mag toevallig hetzelfde id gebruiken
+      const reply = await api('POST', `/messages/${a.id}`, { token: b.accessToken, body: { body: 'Kom eraan', clientId } })
+      expect(reply.status).toBe(201)
+      const list = await api('GET', `/messages/${a.id}`, { token: b.accessToken })
+      expect(list.body).toHaveLength(2)
+      expect((await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { body: 'x', clientId: 'geen-uuid' } })).status).toBe(400)
+    })
+  })
+
+  describe('meldingsvoorkeuren', () => {
+    it('staan standaard aan en zijn aan te passen', async () => {
+      const user = await login('anna@festival.test')
+      const me = await api('GET', '/me', { token: user.accessToken })
+      expect(me.body).toMatchObject({ notifyChat: true, notifyTimetable: true, notifyAnnouncements: true })
+      const off = await api('PATCH', '/me', { token: user.accessToken, body: { notifyTimetable: false } })
+      expect(off.body).toMatchObject({ notifyChat: true, notifyTimetable: false })
+      await api('PATCH', '/me', { token: user.accessToken, body: { notifyTimetable: true } })
+    })
+
+    it('wie een soort uitzet krijgt die pushmelding niet, maar een noodbericht wel', async () => {
+      const anna = await login('anna@festival.test')
+      const bram = await login('bram@festival.test')
+      const annaId = (await api('GET', '/me', { token: anna.accessToken })).body.id as string
+      const bramId = (await api('GET', '/me', { token: bram.accessToken })).body.id as string
+      await api('PATCH', '/me', { token: bram.accessToken, body: { notifyChat: false, notifyAnnouncements: false } })
+
+      const db = createPool(databaseUrl!)
+      try {
+        await db.query(
+          `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+           VALUES ($1, 'https://push.example/anna', 'p', 'a'), ($2, 'https://push.example/bram', 'p', 'a')`,
+          [annaId, bramId],
+        )
+        const endpoints = async (kind: PushKind, urgent = false) =>
+          (await pushSubscriptionsFor(db, [annaId, bramId], kind, urgent)).map((s) => s.endpoint).sort()
+        expect(await endpoints('chat')).toEqual(['https://push.example/anna'])
+        expect(await endpoints('timetable')).toEqual(['https://push.example/anna', 'https://push.example/bram'])
+        expect(await endpoints('announcement')).toEqual(['https://push.example/anna'])
+        // Nood (urgent) gaat altijd door
+        expect(await endpoints('announcement', true)).toEqual(['https://push.example/anna', 'https://push.example/bram'])
+      } finally {
+        await db.query(`DELETE FROM push_subscriptions WHERE endpoint LIKE 'https://push.example/%'`)
+        await db.end()
+        await api('PATCH', '/me', { token: bram.accessToken, body: { notifyChat: true, notifyAnnouncements: true } })
+      }
+    })
   })
 
   describe('timetable', () => {
@@ -432,7 +498,7 @@ describe.skipIf(!databaseUrl)('backend', () => {
     it('noodbericht komt live binnen via WebSocket', async () => {
       const visitor = await login('anna@festival.test')
       const org = await login('organisatie@festival.test')
-      const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?token=${visitor.accessToken}`)
+      const ws = new WebSocket(await wsUrl(visitor.accessToken))
       const received = new Promise<{ type: string; data: { titleNl: string } }>((resolve, reject) => {
         ws.on('message', (raw) => {
           const msg = JSON.parse(raw.toString())
@@ -453,10 +519,21 @@ describe.skipIf(!databaseUrl)('backend', () => {
       expect((await api('GET', '/announcements', { token: visitor.accessToken })).body[0].titleNl).toBe('Onweer')
     })
 
-    it('WebSocket zonder geldig token wordt geweigerd', async () => {
-      const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?token=onzin`)
-      const code = await new Promise((resolve) => ws.on('unexpected-response', (_req, res) => resolve(res.statusCode)))
-      expect(code).toBe(401)
+    it('WebSocket zonder geldig ticket wordt geweigerd, en een ticket werkt maar één keer', async () => {
+      const refused = (url: string) =>
+        new Promise((resolve) => new WebSocket(url).on('unexpected-response', (_req, res) => resolve(res.statusCode)))
+      expect(await refused(`${base.replace('http', 'ws')}/ws?ticket=onzin`)).toBe(401)
+      // Het oude adres met het access-token in de URL werkt niet meer
+      const visitor = await login('anna@festival.test')
+      expect(await refused(`${base.replace('http', 'ws')}/ws?token=${visitor.accessToken}`)).toBe(401)
+      // Zonder login geen ticket
+      expect((await api('POST', '/realtime/ticket')).status).toBe(401)
+
+      const url = await wsUrl(visitor.accessToken)
+      const ws = new WebSocket(url)
+      await new Promise((resolve) => ws.on('open', resolve))
+      ws.close()
+      expect(await refused(url)).toBe(401)
     })
 
     it('SOS komt bij de organisatie en kan worden afgehandeld', async () => {
@@ -736,7 +813,7 @@ describe.skipIf(!databaseUrl)('backend', () => {
     it('een mededeling komt alleen aan bij het eigen festival', async () => {
       const visitor = await login('anna@festival.test')
       const admin2 = await login('beheerder2@festival.test')
-      const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?token=${visitor.accessToken}&festival=${FIRST_FESTIVAL}`)
+      const ws = new WebSocket(await wsUrl(visitor.accessToken, FIRST_FESTIVAL))
       const types: string[] = []
       ws.on('message', (raw) => types.push(JSON.parse(raw.toString()).type))
       await new Promise((resolve) => ws.on('open', resolve))
@@ -755,7 +832,7 @@ describe.skipIf(!databaseUrl)('backend', () => {
 
     it('WebSocket voor een festival waar je niet bij mag wordt geweigerd', async () => {
       const visitor = await login('bram@festival.test')
-      const ws = new WebSocket(`${base.replace('http', 'ws')}/ws?token=${visitor.accessToken}&festival=${SECOND_FESTIVAL}`)
+      const ws = new WebSocket(await wsUrl(visitor.accessToken, SECOND_FESTIVAL))
       const code = await new Promise((resolve) => ws.on('unexpected-response', (_req, res) => resolve(res.statusCode)))
       expect(code).toBe(403)
     })

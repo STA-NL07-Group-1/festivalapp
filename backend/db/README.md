@@ -8,7 +8,7 @@ PostgreSQL 16 of nieuwer. Eigenaar: **Bob** (Network & Cloud), review op securit
 |---|---|
 | `migrations/0001_init.sql` | Eerste schema: 17 tabellen, enums, constraints, triggers. **Bron van waarheid.** |
 | `schema.dbml` | Hetzelfde schema als diagram. Plak het in [dbdiagram.io](https://dbdiagram.io). |
-| `constraints-test.sql` | Probeert 46 ongeldige dingen op te slaan en controleert dat de database ze weigert. |
+| `constraints-test.sql` | Probeert 48 ongeldige dingen op te slaan en controleert dat de database ze weigert. |
 | `create-test-db.sql` | Maakt `festivalapp_test` aan als je `docker compose up` gebruikt. |
 
 ## De 25 tabellen
@@ -32,6 +32,10 @@ Rollen staan niet meer in `users`. Wie in `festival_members` staat is personeel 
 
 Sinds migratie 0006 staat in `users.email_verified_at` of het e-mailadres is bevestigd. Links uit een mail
 (e-mailadres bevestigen, wachtwoord vergeten) staan in `email_tokens`, alleen als SHA-256 en maar één keer te gebruiken.
+
+Sinds migratie 0007 heeft een chatbericht een `client_id`: het id dat de app zelf meegeeft. Wordt een bericht bij
+slecht bereik opnieuw verstuurd, dan slaat de database het geen tweede keer op. In `users.notify_*` staat welke
+pushmeldingen iemand wil; noodberichten gaan altijd door.
 
 Daarnaast houdt `npm run db:migrate` in de tabel `schema_migrations` bij welke migraties al gedraaid zijn.
 

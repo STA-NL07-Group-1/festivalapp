@@ -89,6 +89,7 @@ backend/            Node.js 24 + TypeScript, REST + WebSockets (Bob)
 - Alle request bodies worden gevalideerd tegen `backend/api.yaml` (onbekende velden → 400).
 - Wachtwoorden met argon2id; tokens en codes alleen als SHA-256-hash in de database.
 - Access-token 15 minuten; refresh-token roteert, hergebruik trekt alle sessies in.
+- De WebSocket verbindt met een eenmalig ticket van 30 seconden, zodat het access-token nooit in een URL (en dus in logs) staat.
 - Links uit een mail werken één keer (reset 30 minuten, bevestigen 24 uur); "wachtwoord vergeten" verraadt niet of een adres bestaat; na een nieuw wachtwoord ben je overal uitgelogd.
 - Rate limiting op inloggen, registreren, mails, vriendcodes, SOS, chat en chatbot.
 - Locatie en timetable delen staan standaard uit; alleen de laatste locatie, max. 10 minuten.
