@@ -1,4 +1,5 @@
 import type { Announcement } from '../api/client'
+import { BellIcon } from '../components/icons'
 import { Empty, Screen } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatRelative } from '../lib/format'
@@ -12,8 +13,8 @@ export function NewsScreen({ announcements }: { announcements: Announcement[] })
   const { t, locale } = useI18n()
   return (
     <Screen title={t('news.title')}>
-      {announcements.length === 0 && <Empty>{t('news.empty')}</Empty>}
-      <ul className="list news">
+      {announcements.length === 0 && <Empty icon={<BellIcon />}>{t('news.empty')}</Empty>}
+      <ul className="list news stagger">
         {announcements.map((a) => {
           const { title, body } = announcementText(a, locale)
           return (

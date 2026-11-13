@@ -73,6 +73,7 @@ export const nl = {
   'timetable.friends': 'Vrienden',
   'timetable.allStages': 'Alle podia',
   'timetable.empty': 'Nog niets in je timetable. Tik op ☆ bij een optreden.',
+  'timetable.browseAll': 'Bekijk alle acts',
   'timetable.add': '{artist} toevoegen aan mijn timetable',
   'timetable.remove': '{artist} uit mijn timetable halen',
   'timetable.signup': 'Aanmelden',
@@ -118,6 +119,9 @@ export const nl = {
   'chat.placeholder': 'Typ een bericht…',
   'chat.send': 'Versturen',
   'chat.empty': 'Nog geen berichten. Zeg hoi!',
+  'chat.sending': 'Versturen…',
+  'chat.failed': 'Niet verstuurd',
+  'chat.retry': 'Opnieuw',
 
   'news.title': 'Meldingen',
   'news.empty': 'Geen meldingen op dit moment.',

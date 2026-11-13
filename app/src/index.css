@@ -38,6 +38,24 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
+  /* Beweging: iedereen gebruikt deze waarden, geen losse getallen.
+     Binnenkomen = ease-out (snel starten, rustig stoppen). Een exit is ongeveer 20% korter. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-press: 100ms;
+  --dur-fast: 150ms;
+  --dur-base: 200ms;
+  --dur-exit: 160ms;
+  --dur-sheet: 220ms;
+  --dur-sheet-exit: 180ms;
+  --stagger: 30ms;
+  /* Hoe ver en hoe groot iets beweegt. Bij "minder beweging" worden deze 0 of 1, alleen de fade blijft. */
+  --press-scale: 0.97;
+  --shift-in: 8px;
+  --sheet-shift: 40px;
+  --toast-shift: 12px;
+  --pop-scale: 1.15;
+
   font-family: var(--body);
   font-size: 16px;
   line-height: 1.5;
@@ -121,6 +139,26 @@ textarea {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
+/* Tekst: geen losse woorden op een eigen regel, cijfers die niet verspringen */
+h1,
+h2,
+h3,
+.set-artist,
+.stage-tile-artist {
+  text-wrap: balance;
+}
+p,
+li,
+summary {
+  text-wrap: pretty;
+}
+time,
+.badge,
+.tab-badge,
+.day-date,
+.stage-tile-time {
+  font-variant-numeric: tabular-nums;
+}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -164,13 +202,9 @@ textarea {
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
-  transition: transform 0.1s;
-}
-.button:active {
-  transform: scale(0.98);
 }
 .button.small {
-  min-height: 36px;
+  min-height: 44px;
   padding: 6px 16px;
   font-size: 0.9rem;
 }
@@ -203,12 +237,15 @@ textarea {
   cursor: default;
 }
 .link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   background: none;
   border: none;
   color: var(--accent);
   font-weight: 700;
   cursor: pointer;
-  padding: 8px 0;
+  padding: 0;
 }
 .link.danger {
   color: var(--danger);
@@ -230,6 +267,25 @@ textarea {
 }
 .icon-button:disabled {
   opacity: 0.35;
+}
+
+/* Indrukken voelt overal hetzelfde: knoppen krimpen even naar 0,97.
+   Alleen transform en kleur bewegen, nooit "transition: all". */
+:where(.button, .icon-button, .link, .back-link, .chip, .segmented button, .tabbar button, .day, .fab:not(.sos), .star) {
+  transition:
+    transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+:where(.button, .icon-button, .link, .back-link, .chip, .segmented button, .tabbar button, .day, .fab:not(.sos), .star):active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+/* Brede rijen krimpen niet (dat oogt raar over de hele breedte), ze lichten op */
+:where(button.row, a.row, .festival-bar) {
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+:where(button.row, a.row, .festival-bar):active:not(:disabled) {
+  background-color: var(--surface-2);
 }
 
 /* ---------------------------------------------------------------- formulieren */
@@ -295,7 +351,7 @@ textarea {
 }
 .segmented button {
   flex: 1;
-  min-height: 38px;
+  min-height: 44px;
   border: none;
   border-radius: 999px;
   background: transparent;
@@ -341,7 +397,7 @@ textarea {
   height: 22px;
   border-radius: 50%;
   background: var(--muted);
-  transition: transform 0.15s;
+  transition: transform var(--dur-fast) var(--ease-out);
 }
 .switch:checked {
   background: var(--gradient);
@@ -396,11 +452,155 @@ textarea {
   color: var(--muted);
 }
 .empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
   color: var(--muted);
   text-align: center;
   padding: 36px 16px;
   max-width: 34ch;
   margin: 0 auto;
+}
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* Skeleton: grijze vormen die de indeling vasthouden terwijl de inhoud laadt.
+   row en text lijken op .list, set op een optreden in de timetable. */
+.skeleton {
+  display: grid;
+}
+.skeleton-row,
+.skeleton-text {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.skeleton-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  padding: 12px 16px;
+}
+.skeleton-row .skeleton-item + .skeleton-item,
+.skeleton-text .skeleton-item + .skeleton-item {
+  border-top: 1px solid var(--line);
+}
+.skeleton-lines {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+}
+.skeleton-block {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  animation: skeleton-pulse 1.2s var(--ease-in-out) infinite alternate;
+}
+.skeleton-block.short {
+  width: 55%;
+}
+.skeleton-block.lead {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.skeleton-set .skeleton-item {
+  align-items: start;
+  min-height: 84px;
+  padding: 16px 0 16px 14px;
+  border-bottom: 1px solid var(--line);
+  box-shadow: inset 4px 0 0 var(--surface-2);
+}
+.skeleton-set .skeleton-block.lead {
+  width: 44px;
+  height: 24px;
+  border-radius: 6px;
+}
+.skeleton-set .skeleton-lines .skeleton-block:first-child {
+  height: 24px;
+  width: 70%;
+}
+.skeleton-card {
+  gap: 10px;
+}
+/* Groot vlak (plattegrond, QR-code): het hele vlak pulseert, zonder tekstregels */
+.skeleton-card .skeleton-item {
+  min-height: 160px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  animation: skeleton-pulse 1.2s var(--ease-in-out) infinite alternate;
+}
+.skeleton-card .skeleton-lines {
+  visibility: hidden;
+}
+.skeleton-bubble {
+  gap: 6px;
+}
+.skeleton-bubble .skeleton-item {
+  min-height: 0;
+  width: 55%;
+  padding: 0;
+}
+.skeleton-bubble .skeleton-item:nth-child(odd) {
+  justify-self: end;
+}
+.skeleton-bubble .skeleton-block {
+  height: 38px;
+  border-radius: 20px;
+}
+@keyframes skeleton-pulse {
+  from {
+    opacity: 0.45;
+  }
+}
+
+/* Rijen komen kort na elkaar binnen (30 ms). Na 10 rijen komt de rest tegelijk. */
+.stagger > * {
+  animation: item-in var(--dur-base) var(--ease-out) both;
+}
+.stagger > :nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
+.stagger > :nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
+.stagger > :nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
+.stagger > :nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
+.stagger > :nth-child(6) { animation-delay: calc(var(--stagger) * 5); }
+.stagger > :nth-child(7) { animation-delay: calc(var(--stagger) * 6); }
+.stagger > :nth-child(8) { animation-delay: calc(var(--stagger) * 7); }
+.stagger > :nth-child(9) { animation-delay: calc(var(--stagger) * 8); }
+.stagger > :nth-child(n + 10) { animation-delay: calc(var(--stagger) * 9); }
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--shift-in));
+  }
+}
+
+/* Icoon wisselen: crossfade met een beetje schaal en blur */
+.icon-swap {
+  display: grid;
+}
+.icon-swap > * {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) var(--ease-out);
+}
+.icon-swap[data-on='true'] > :last-child,
+.icon-swap[data-on='false'] > :first-child {
+  opacity: 0;
+  transform: scale(0.6);
+  filter: blur(2px);
 }
 .avatar {
   display: inline-grid;
@@ -453,7 +653,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: 44px;
   padding: 6px 14px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -535,6 +735,7 @@ textarea {
   font-weight: 700;
   cursor: pointer;
   padding: 0;
+  min-height: 44px;
   width: fit-content;
 }
 
@@ -873,11 +1074,11 @@ textarea {
   font-weight: 800;
   font-size: 0.8rem;
   border: 3px solid white;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.4);
+  box-shadow: 0 4px 14px rgb(5 2 15 / 0.4);
 }
 .marker-pin span {
   font-size: 26px;
-  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.5));
+  filter: drop-shadow(0 2px 3px rgb(5 2 15 / 0.5));
 }
 .marker-me span {
   display: block;
@@ -909,7 +1110,7 @@ textarea {
   font-size: 0.85rem;
   font-weight: 800;
   border: 2px solid #170f2e;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  box-shadow: 0 2px 8px rgb(5 2 15 / 0.35);
 }
 .marker-point.ehbo span {
   color: #ffffff;
@@ -1188,8 +1389,14 @@ textarea {
 .star.on {
   color: var(--neon-text);
 }
-.star:active {
-  transform: scale(0.9);
+/* Korte puls: bevestigt dat de act in je timetable staat */
+.star.on.pop .icon-swap {
+  animation: pop 320ms var(--ease-out);
+}
+@keyframes pop {
+  40% {
+    transform: scale(var(--pop-scale));
+  }
 }
 
 /* ---------------------------------------------------------------- vrienden */
@@ -1214,7 +1421,7 @@ textarea {
 .scanner video {
   width: 100%;
   border-radius: var(--radius-lg);
-  background: black;
+  background: #05020f;
   aspect-ratio: 1;
   object-fit: cover;
 }
@@ -1279,10 +1486,30 @@ textarea {
   background: var(--surface-2);
   border-bottom-left-radius: 6px;
 }
-.bubble time {
+.bubble time,
+.bubble-status {
   font-size: 0.7rem;
   opacity: 0.75;
   justify-self: end;
+}
+/* Meteen tonen (optimistic update): half doorzichtig tot de server het heeft */
+.bubble.sending {
+  opacity: 0.65;
+}
+.bubble.failed {
+  background: var(--danger-strong);
+}
+.bubble-retry {
+  justify-self: end;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .chat-input {
   display: flex;
@@ -1317,7 +1544,7 @@ textarea {
   font-size: 1.1rem;
 }
 .announcement p {
-  max-width: 60ch;
+  max-width: 65ch;
 }
 .announcement.nood {
   border: 2px solid var(--danger);
@@ -1336,6 +1563,11 @@ textarea {
   backdrop-filter: blur(3px);
   display: grid;
   align-items: end;
+  animation: fade-in var(--dur-sheet) var(--ease-out);
+}
+.sheet-backdrop.closing {
+  animation: fade-out var(--dur-sheet-exit) var(--ease-out) forwards;
+  pointer-events: none;
 }
 .sheet {
   max-height: 90vh;
@@ -1349,7 +1581,10 @@ textarea {
   gap: 16px;
   width: min(560px, 100%);
   justify-self: center;
-  animation: slide-up 0.22s ease-out;
+  animation: slide-up var(--dur-sheet) var(--ease-out);
+}
+.sheet-backdrop.closing .sheet {
+  animation: slide-down var(--dur-sheet-exit) var(--ease-out) forwards;
 }
 .sheet > h2 {
   font-family: var(--display);
@@ -1367,7 +1602,23 @@ textarea {
 }
 @keyframes slide-up {
   from {
-    transform: translateY(40px);
+    transform: translateY(var(--sheet-shift));
+    opacity: 0;
+  }
+}
+@keyframes slide-down {
+  to {
+    transform: translateY(var(--sheet-shift));
+    opacity: 0;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
     opacity: 0;
   }
 }
@@ -1380,16 +1631,56 @@ textarea {
 }
 .toast {
   position: fixed;
-  left: 50%;
+  left: 16px;
+  right: 16px;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  margin-inline: auto;
   bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 26px);
-  transform: translateX(-50%);
   z-index: 2100;
+  animation: toast-in var(--dur-base) var(--ease-out);
   background: var(--text);
   color: var(--bg);
   padding: 10px 18px;
   border-radius: 999px;
   font-weight: 700;
   box-shadow: var(--shadow);
+}
+.toast.closing {
+  animation: toast-out var(--dur-exit) var(--ease-out) forwards;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--toast-shift));
+  }
+}
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--toast-shift));
+  }
+}
+
+/* Tabbladen wisselen (View Transitions): het oude scherm fadet uit terwijl het nieuwe
+   8 px omhoog schuift en infadet. Alleen het midden beweegt, de tabbalk blijft staan. */
+.content {
+  view-transition-name: content;
+}
+::view-transition-group(root) {
+  animation-duration: var(--dur-fast);
+}
+::view-transition-old(content) {
+  animation: fade-out var(--dur-exit) var(--ease-out) both;
+}
+::view-transition-new(content) {
+  animation: view-in var(--dur-base) var(--ease-out) both;
+}
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--shift-in));
+  }
 }
 
 @media (min-width: 720px) {
@@ -1398,12 +1689,27 @@ textarea {
   }
 }
 
+/* Minder beweging: niets verschuift, schaalt of knippert meer. Korte fades blijven,
+   want die laten nog steeds zien dat er iets verandert. De SOS-ring blijft ook: die toont hoe lang je nog moet vasthouden. */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
+  :root {
+    --press-scale: 1;
+    --shift-in: 0px;
+    --sheet-shift: 0px;
+    --toast-shift: 0px;
+    --pop-scale: 1;
+  }
+  .emergency-banner,
+  .splash img,
+  .beams,
+  .live-dot,
+  .skeleton-block,
+  .skeleton-card .skeleton-item {
+    animation: none;
+  }
+  .icon-swap > * {
+    transform: none !important;
+    filter: none !important;
   }
 }
 
@@ -1497,6 +1803,7 @@ a.row {
   display: grid;
   gap: 10px;
   margin-bottom: 14px;
+  max-width: 65ch;
 }
 .faq summary {
   font-weight: 700;
@@ -1507,6 +1814,7 @@ a.row {
 }
 .rules {
   margin: 0;
+  max-width: 65ch;
   padding-left: 36px;
   display: grid;
   gap: 8px;
@@ -1514,6 +1822,7 @@ a.row {
 .legal {
   display: grid;
   gap: 18px;
+  max-width: 65ch;
 }
 .legal section {
   display: grid;

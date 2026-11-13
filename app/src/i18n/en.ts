@@ -74,6 +74,7 @@ export const en: Record<TranslationKey, string> = {
   'timetable.friends': 'Friends',
   'timetable.allStages': 'All stages',
   'timetable.empty': 'Nothing in your timetable yet. Tap ☆ on a performance.',
+  'timetable.browseAll': 'Browse all acts',
   'timetable.add': 'Add {artist} to my timetable',
   'timetable.remove': 'Remove {artist} from my timetable',
   'timetable.signup': 'Sign up',
@@ -119,6 +120,9 @@ export const en: Record<TranslationKey, string> = {
   'chat.placeholder': 'Type a message…',
   'chat.send': 'Send',
   'chat.empty': 'No messages yet. Say hi!',
+  'chat.sending': 'Sending…',
+  'chat.failed': 'Not sent',
+  'chat.retry': 'Retry',
 
   'news.title': 'Updates',
   'news.empty': 'No updates right now.',

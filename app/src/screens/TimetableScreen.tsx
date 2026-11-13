@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { api, ApiError, type Friend, type Performance, type Signup, type Stage } from '../api/client'
 import { StarIcon } from '../components/icons'
-import { Empty, ErrorNote, Screen, Segmented, Toast } from '../components/ui'
+import { Empty, ErrorNote, IconSwap, Screen, Segmented, Skeleton, Toast } from '../components/ui'
 import { useI18n } from '../i18n'
 import { festivalDay, formatDay, formatTime } from '../lib/format'
 import { useAsync } from '../lib/useAsync'
@@ -93,6 +93,8 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
   const [day, setDay] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [friendId, setFriendId] = useState<string | null>(initialFriend ?? null)
+  // Act die net een ster kreeg: die krijgt een korte puls
+  const [popped, setPopped] = useState<string | null>(null)
 
   const stages = useAsync(() => api.get<Stage[]>('/stages'))
   const performances = useAsync(() => api.get<Performance[]>('/performances'))
@@ -141,13 +143,19 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
   const today = festivalDay(new Date(now).toISOString())
   const activeDay = day && allDays.includes(day) ? day : allDays.includes(today) ? today : (allDays[0] ?? null)
 
+  // Optimistic update: de ster gaat meteen aan of uit. Lukt het niet, dan zetten we hem terug en melden we dat.
   async function toggleMine(p: Performance) {
+    const failed = () => {
+      setToast(t('common.error'))
+      void mine.reload()
+    }
     if (mineIds.has(p.id)) {
       setMine((list) => list?.filter((x) => x.id !== p.id))
-      await api.delete(`/me/timetable/${p.id}`).catch(() => mine.reload())
+      await api.delete(`/me/timetable/${p.id}`).catch(failed)
     } else {
+      setPopped(p.id)
       setMine((list) => [...(list ?? []), p])
-      await api.put(`/me/timetable/${p.id}`).catch(() => mine.reload())
+      await api.put(`/me/timetable/${p.id}`).catch(failed)
     }
   }
 
@@ -226,13 +234,26 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
       </div>
 
       {performances.error ? <ErrorNote>{t('common.error')}</ErrorNote> : null}
-      {view === 'mine' && mine.data?.length === 0 && <Empty>{t('timetable.empty')}</Empty>}
+      {view === 'all' && performances.loading && <Skeleton variant="set" rows={4} />}
+      {view === 'mine' && mine.loading && <Skeleton variant="set" rows={2} />}
+      {view === 'mine' && mine.data?.length === 0 && (
+        <Empty
+          icon={<StarIcon />}
+          action={
+            <button type="button" className="button small" onClick={() => setView('all')}>
+              {t('timetable.browseAll')}
+            </button>
+          }
+        >
+          {t('timetable.empty')}
+        </Empty>
+      )}
       {view === 'friends' && friendId && friendTimetable.data === 'not-shared' && <Empty>{t('timetable.notShared', { name: friendName })}</Empty>}
       {view === 'friends' && friendId && Array.isArray(friendTimetable.data) && friendTimetable.data.length === 0 && (
         <Empty>{t('timetable.friendEmpty', { name: friendName })}</Empty>
       )}
 
-      <ol className="lineup">
+      <ol className="lineup stagger">
         {items.map((p) => {
           const live = isLive(p, now)
           return (
@@ -273,12 +294,12 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
               </div>
               <button
                 type="button"
-                className={`star ${mineIds.has(p.id) ? 'on' : ''}`}
+                className={`star ${mineIds.has(p.id) ? 'on' : ''} ${popped === p.id ? 'pop' : ''}`}
                 aria-pressed={mineIds.has(p.id)}
                 aria-label={t(mineIds.has(p.id) ? 'timetable.remove' : 'timetable.add', { artist: p.artist })}
                 onClick={() => void toggleMine(p)}
               >
-                <StarIcon filled={mineIds.has(p.id)} />
+                <IconSwap on={mineIds.has(p.id)} onIcon={<StarIcon filled />} offIcon={<StarIcon />} />
               </button>
             </li>
           )

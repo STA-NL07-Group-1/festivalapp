@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { api, type Announcement, type Friend } from './api/client'
 import { FestivalBar, NoFestivalScreen } from './components/festival'
@@ -31,6 +32,19 @@ function readDeepLink() {
   }
   if (window.location.search) window.history.replaceState(null, '', window.location.pathname)
   return link
+}
+
+/**
+ * Wisselt van scherm met een View Transition: het oude scherm fadet uit terwijl het nieuwe binnenkomt
+ * (zie ::view-transition in index.css). Browsers zonder View Transitions wisselen gewoon direct.
+ */
+function withTransition(update: () => void) {
+  const doc = document as unknown as { startViewTransition?: (callback: () => void) => unknown }
+  if (typeof doc.startViewTransition !== 'function') {
+    update()
+    return
+  }
+  doc.startViewTransition(() => flushSync(update))
 }
 
 function readDismissed(): string[] {
@@ -105,10 +119,14 @@ function Shell() {
   }
 
   const go = (next: Tab) => {
-    setChatWith(null)
-    setTab(next)
     if (next === 'meldingen') setUnread(0)
+    if (next === tab && !chatWith) return
+    withTransition(() => {
+      setChatWith(null)
+      setTab(next)
+    })
   }
+  const openChat = (friend: Friend | null) => withTransition(() => setChatWith(friend))
 
   const labels: Record<Tab, string> = {
     kaart: t('tab.map'),
@@ -146,7 +164,7 @@ function Shell() {
 
       <main className="content">
         {chatWith ? (
-          <ChatScreen friend={chatWith} onBack={() => setChatWith(null)} />
+          <ChatScreen friend={chatWith} onBack={() => openChat(null)} />
         ) : !festival && FESTIVAL_TABS.includes(tab) ? (
           <NoFestivalScreen />
         ) : (
@@ -159,11 +177,13 @@ function Shell() {
             {tab === 'vrienden' && (
               <FriendsScreen
                 initialCode={deepLink.friendCode}
-                onOpenChat={setChatWith}
-                onOpenTimetable={(id) => {
-                  setTimetableFriend(id)
-                  setTab('timetable')
-                }}
+                onOpenChat={openChat}
+                onOpenTimetable={(id) =>
+                  withTransition(() => {
+                    setTimetableFriend(id)
+                    setTab('timetable')
+                  })
+                }
               />
             )}
             {tab === 'meldingen' && <NewsScreen announcements={announcements.data ?? []} />}

@@ -1,9 +1,9 @@
 import QRCode from 'qrcode'
 import { useCallback, useState, type FormEvent } from 'react'
 import { api, ApiError, type Friend, type FriendCode, type FriendLocation } from '../api/client'
-import { ChevronIcon } from '../components/icons'
+import { ChevronIcon, UsersIcon } from '../components/icons'
 import { QrScanner } from '../components/QrScanner'
-import { Avatar, Empty, Screen, Sheet, Toast } from '../components/ui'
+import { Avatar, Empty, Screen, Sheet, Skeleton, Toast } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatRelative, formatTime } from '../lib/format'
 import { useAsync } from '../lib/useAsync'
@@ -91,8 +91,20 @@ export function FriendsScreen({
         </button>
       }
     >
-      {friends.data?.length === 0 && <Empty>{t('friends.empty')}</Empty>}
-      <ul className="list">
+      {friends.loading && <Skeleton rows={3} />}
+      {friends.data?.length === 0 && (
+        <Empty
+          icon={<UsersIcon />}
+          action={
+            <button type="button" className="button primary small" onClick={() => setAdding(true)}>
+              + {t('friends.add')}
+            </button>
+          }
+        >
+          {t('friends.empty')}
+        </Empty>
+      )}
+      <ul className="list stagger">
         {friends.data?.map((f) => {
           const loc = locationOf(f.id)
           return (
@@ -150,7 +162,7 @@ export function FriendsScreen({
                 </button>
               </>
             ) : (
-              <p>{t('common.loading')}</p>
+              <Skeleton variant="card" rows={1} />
             )}
           </section>
 
