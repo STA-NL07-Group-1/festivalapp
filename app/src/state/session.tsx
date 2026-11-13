@@ -42,6 +42,12 @@ interface Session {
   logout(): Promise<void>
   updateMe(patch: Partial<Pick<Me, 'displayName' | 'theme' | 'locale' | 'shareLocation' | 'shareTimetable'>>): Promise<void>
   deleteAccount(): Promise<void>
+  /** Wachtwoord wijzigen; andere apparaten worden uitgelogd, dit apparaat krijgt nieuwe tokens */
+  changePassword(currentPassword: string, newPassword: string): Promise<void>
+  /** Stuurt de mail om je e-mailadres te bevestigen opnieuw */
+  resendVerifyEmail(): Promise<void>
+  /** Na een geslaagde bevestigingslink: je profiel bijwerken zonder opnieuw te laden */
+  markEmailVerified(): void
   setLocale(locale: Locale): void
   /** Wissel van festival: de app haalt daarna alles opnieuw op */
   chooseFestival(id: string): Promise<void>
@@ -224,6 +230,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = locale
   }, [locale])
 
+  // Stabiel (useCallback), zodat een effect dat dit gebruikt niet bij elke wijziging van de sessie opnieuw draait
+  const markEmailVerified = useCallback(() => {
+    setMe((current) => (current && !current.emailVerified ? { ...current, emailVerified: true } : current))
+  }, [])
+
   const startSession = useCallback(
     async (tokens: AuthTokens) => {
       storeTokens(tokens)
@@ -262,6 +273,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await api.delete('/me')
         endSession()
       },
+      async changePassword(currentPassword, newPassword) {
+        storeTokens(await api.put<AuthTokens>('/me/password', { currentPassword, newPassword }))
+      },
+      async resendVerifyEmail() {
+        await api.post('/me/verify-email')
+      },
+      markEmailVerified,
       async chooseFestival(id) {
         applyLoaded(await loadAccount(id))
       },
@@ -281,7 +299,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [status, me, festivals, festival, festivalId, realtime, online, live, dark, locale, startSession, endSession, applyLoaded],
+    [status, me, festivals, festival, festivalId, realtime, online, live, dark, locale, startSession, endSession, applyLoaded, markEmailVerified],
   )
 
   return (

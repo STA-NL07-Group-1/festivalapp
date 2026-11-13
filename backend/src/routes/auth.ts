@@ -1,10 +1,17 @@
 import type { Deps } from '../app.ts'
-import { audit, transaction } from '../db.ts'
+import { audit, transaction, type Queryable } from '../db.ts'
 import { HttpError, badRequest, conflict, requireUser, unauthorized, type Router } from '../http.ts'
+import { passwordChangedMail, resetMail, verifyMail, welcomeMail, type Mail } from '../mail.ts'
 import { hashPassword, isWeakPassword, randomToken, sha256, signAccessToken, verifyPassword } from '../security.ts'
 
 const MAX_FAILED_LOGINS = 10
 const LOCK_MINUTES = 15
+/** Hoe lang een link uit een mail werkt (de database staat maximaal 2 dagen en 1 uur toe) */
+const VERIFY_MINUTES = 24 * 60
+const RESET_MINUTES = 30
+const INVALID_LINK = 'Deze link is ongeldig of verlopen.'
+
+type Locale = 'nl' | 'en'
 
 interface UserRow {
   id: string
@@ -15,8 +22,30 @@ interface UserRow {
 }
 
 export function authRoutes(r: Router, deps: Deps): void {
-  const { db, config } = deps
+  const { db, config, mailer } = deps
   const strict = { limit: 10, windowMs: 60_000 }
+  // Mails sturen kost geld en kan spam worden: hier een strengere grens
+  const mailLimit = { limit: 3, windowMs: 60_000 }
+
+  /** Nieuwe link voor in een mail. Oudere, nog ongebruikte links van hetzelfde soort werken daarna niet meer. */
+  async function createEmailToken(q: Queryable, userId: string, purpose: 'verify' | 'reset'): Promise<string> {
+    const token = randomToken()
+    await q.query('UPDATE email_tokens SET used_at = now() WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL', [userId, purpose])
+    await q.query(
+      `INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at)
+       VALUES ($1, $2, $3, now() + make_interval(mins => $4))`,
+      [userId, purpose, sha256(token), purpose === 'reset' ? RESET_MINUTES : VERIFY_MINUTES],
+    )
+    return token
+  }
+
+  const appLink = (param: 'verify' | 'reset', token: string) => `${config.appUrl}/?${param}=${encodeURIComponent(token)}`
+
+  // Niet wachten op de mail: het antwoord duurt dan niet langer als het account bestaat (en verraadt dat dus niet).
+  // Een mislukte mail laat het verzoek niet mislukken; alleen de fout komt in de log, zonder e-mailadres.
+  function sendInBackground(mail: Mail) {
+    mailer.send(mail).catch((error: unknown) => console.error('[mail] versturen mislukt:', error instanceof Error ? error.message : error))
+  }
 
   async function issueTokens(user: { id: string }, userAgent: string | undefined) {
     const refreshToken = randomToken()
@@ -59,8 +88,9 @@ export function authRoutes(r: Router, deps: Deps): void {
       // Het ticket bepaalt bij welk festival dit account hoort; later kunnen er tickets bij (POST /me/tickets)
       await tx.query(`UPDATE tickets SET status = 'gekoppeld', user_id = $2 WHERE id = $1`, [ticket.rows[0].id, inserted.rows[0]!.id])
       await audit(tx, inserted.rows[0]!.id, 'auth.register')
-      return inserted.rows[0]!
+      return { id: inserted.rows[0]!.id, verifyToken: await createEmailToken(tx, inserted.rows[0]!.id, 'verify') }
     })
+    sendInBackground(welcomeMail(body.locale ?? 'nl', { to: email, name: displayName, verifyUrl: appLink('verify', user.verifyToken) }))
     return { status: 201, body: await issueTokens(user, ctx.req.headers['user-agent']) }
   })
 
@@ -120,6 +150,112 @@ export function authRoutes(r: Router, deps: Deps): void {
     if (session.expires_at <= new Date() || session.blocked_at) throw unauthorized()
     await db.query('UPDATE sessions SET revoked_at = now() WHERE id = $1', [session.id])
     return { status: 200, body: await issueTokens({ id: session.user_id }, ctx.req.headers['user-agent']) }
+  })
+
+  // ------------------------------------------------------------- e-mailadres bevestigen
+  r.post('/auth/verify-email', { operationId: 'verifyEmail', auth: 'none', rateLimit: strict }, async (ctx) => {
+    const { token } = ctx.body as { token: string }
+    const { rows } = await db.query<{ user_id: string }>(
+      `UPDATE email_tokens SET used_at = now()
+        WHERE token_hash = $1 AND purpose = 'verify' AND used_at IS NULL AND expires_at > now()
+        RETURNING user_id`,
+      [sha256(token)],
+    )
+    if (!rows[0]) throw badRequest(INVALID_LINK)
+    await db.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1', [rows[0].user_id])
+    await audit(db, rows[0].user_id, 'auth.email_verified')
+    return { status: 204 }
+  })
+
+  r.post('/me/verify-email', { operationId: 'resendVerifyEmail', rateLimit: mailLimit }, async (ctx) => {
+    const user = requireUser(ctx)
+    const { rows } = await db.query<{ email: string; locale: Locale; email_verified_at: Date | null }>(
+      'SELECT email, locale, email_verified_at FROM users WHERE id = $1',
+      [user.id],
+    )
+    const row = rows[0]
+    // Al bevestigd: niets te doen
+    if (row && !row.email_verified_at) {
+      const token = await createEmailToken(db, user.id, 'verify')
+      sendInBackground(verifyMail(row.locale, { to: row.email, verifyUrl: appLink('verify', token) }))
+    }
+    return { status: 204 }
+  })
+
+  // ------------------------------------------------------------- wachtwoord vergeten
+  r.post('/auth/forgot-password', { operationId: 'forgotPassword', auth: 'none', rateLimit: mailLimit }, async (ctx) => {
+    const { email } = ctx.body as { email: string }
+    const { rows } = await db.query<{ id: string; email: string; locale: Locale; blocked_at: Date | null }>(
+      'SELECT id, email, locale, blocked_at FROM users WHERE email = $1',
+      [email.trim().toLowerCase()],
+    )
+    const user = rows[0]
+    if (user && !user.blocked_at) {
+      const token = await createEmailToken(db, user.id, 'reset')
+      await audit(db, user.id, 'auth.reset_requested', undefined, { ip: ctx.ip })
+      sendInBackground(resetMail(user.locale, { to: user.email, resetUrl: appLink('reset', token) }))
+    }
+    // Altijd hetzelfde antwoord, zodat niet te achterhalen is welke e-mailadressen een account hebben
+    return { status: 204 }
+  })
+
+  r.post('/auth/reset-password', { operationId: 'resetPassword', auth: 'none', rateLimit: strict }, async (ctx) => {
+    const { token, password } = ctx.body as { token: string; password: string }
+    const user = await transaction(db, async (tx) => {
+      const { rows } = await tx.query<{ token_id: string; user_id: string; email: string; locale: Locale }>(
+        `SELECT t.id AS token_id, u.id AS user_id, u.email, u.locale
+           FROM email_tokens t JOIN users u ON u.id = t.user_id
+          WHERE t.token_hash = $1 AND t.purpose = 'reset' AND t.used_at IS NULL AND t.expires_at > now()
+            AND u.blocked_at IS NULL
+          FOR UPDATE OF t`,
+        [sha256(token)],
+      )
+      const row = rows[0]
+      if (!row) throw badRequest(INVALID_LINK)
+      // Eerst het wachtwoord controleren: is het te zwak, dan blijft de link bruikbaar voor een nieuwe poging
+      if (isWeakPassword(password, row.email)) throw badRequest('Kies een sterker wachtwoord.')
+      await tx.query(
+        `UPDATE users SET password_hash = $2, failed_logins = 0, locked_until = NULL,
+                email_verified_at = COALESCE(email_verified_at, now())
+          WHERE id = $1`,
+        [row.user_id, await hashPassword(password)],
+      )
+      await tx.query(`UPDATE email_tokens SET used_at = now() WHERE user_id = $1 AND purpose = 'reset' AND used_at IS NULL`, [row.user_id])
+      // Wie het oude wachtwoord kende, is nu overal uitgelogd. Verwijderen en niet intrekken: een ingetrokken
+      // refresh-token dat terugkomt geldt als gestolen (zie /auth/refresh) en zou ook de nieuwe sessies uitloggen.
+      await tx.query('DELETE FROM sessions WHERE user_id = $1', [row.user_id])
+      await audit(tx, row.user_id, 'auth.password_reset', undefined, { ip: ctx.ip })
+      return row
+    })
+    sendInBackground(passwordChangedMail(user.locale, { to: user.email }))
+    return { status: 204 }
+  })
+
+  // ------------------------------------------------------------- wachtwoord wijzigen (ingelogd)
+  r.put('/me/password', { operationId: 'changePassword', rateLimit: strict }, async (ctx) => {
+    const current = requireUser(ctx)
+    const { currentPassword, newPassword } = ctx.body as { currentPassword: string; newPassword: string }
+    const { rows } = await db.query<{ email: string; locale: Locale; password_hash: string }>(
+      'SELECT email, locale, password_hash FROM users WHERE id = $1',
+      [current.id],
+    )
+    const row = rows[0]
+    if (!row) throw unauthorized()
+    // 400 en geen 401: bij 401 logt de app je uit
+    if (!(await verifyPassword(row.password_hash, currentPassword))) {
+      await audit(db, current.id, 'auth.password_change_failed', undefined, { ip: ctx.ip })
+      throw badRequest('Je huidige wachtwoord klopt niet.')
+    }
+    if (isWeakPassword(newPassword, row.email)) throw badRequest('Kies een sterker wachtwoord.')
+    await transaction(db, async (tx) => {
+      await tx.query('UPDATE users SET password_hash = $2 WHERE id = $1', [current.id, await hashPassword(newPassword)])
+      // Andere apparaten uitloggen; dit apparaat krijgt hieronder nieuwe tokens. Verwijderen en niet intrekken:
+      // anders logt een ander apparaat dat later zijn oude token probeert ook deze nieuwe sessie uit (zie /auth/refresh).
+      await tx.query('DELETE FROM sessions WHERE user_id = $1', [current.id])
+      await audit(tx, current.id, 'auth.password_changed')
+    })
+    sendInBackground(passwordChangedMail(row.locale, { to: row.email }))
+    return { status: 200, body: await issueTokens(current, ctx.req.headers['user-agent']) }
   })
 
   r.post('/auth/logout', { operationId: 'logout' }, async (ctx) => {

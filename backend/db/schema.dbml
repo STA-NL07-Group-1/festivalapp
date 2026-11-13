@@ -35,6 +35,11 @@ Enum app_locale {
   en
 }
 
+Enum email_token_purpose {
+  verify
+  reset
+}
+
 Enum ticket_status {
   geldig
   gekoppeld
@@ -212,8 +217,19 @@ Table users {
   locked_until timestamptz
   blocked_at timestamptz [note: 'Geblokkeerd voor alle festivals (migratie 0003)']
   blocked_reason text [note: 'Korte neutrale reden, max. 200 tekens']
+  email_verified_at timestamptz [note: 'Leeg = e-mailadres nog niet bevestigd (migratie 0006)']
   created_at timestamptz [not null, default: `now()`]
   updated_at timestamptz [not null, default: `now()`]
+}
+
+Table email_tokens {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  purpose email_token_purpose [not null]
+  token_hash text [not null, unique, note: 'SHA-256 van de token uit de mail']
+  created_at timestamptz [not null, default: `now()`]
+  expires_at timestamptz [not null, note: 'reset max. 1 uur, verify max. 2 dagen']
+  used_at timestamptz [note: 'Gevuld = al gebruikt']
 }
 
 Table sessions {

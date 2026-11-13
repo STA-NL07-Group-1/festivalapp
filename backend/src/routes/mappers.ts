@@ -8,6 +8,7 @@ const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? n
 export const toMe = (r: Row, ctx: { user: { role: string; platformRole: string | null } | null; festivalId: string | null }) => ({
   id: r.id,
   email: r.email,
+  emailVerified: r.email_verified_at != null,
   displayName: r.display_name,
   role: ctx.user?.role ?? 'bezoeker',
   platformRole: ctx.user?.platformRole ?? null,

@@ -7,7 +7,7 @@ import { toFriend, toFriendLocation, toMe, toMessage, toPin } from './mappers.ts
 
 const FRIEND_CODE_MINUTES = 10
 const LOCATION_TTL_MINUTES = 10
-const ME_COLUMNS = 'id, email, display_name, theme, locale, share_location, share_timetable'
+const ME_COLUMNS = 'id, email, email_verified_at, display_name, theme, locale, share_location, share_timetable'
 
 export function socialRoutes(r: Router, deps: Deps): void {
   const { db } = deps

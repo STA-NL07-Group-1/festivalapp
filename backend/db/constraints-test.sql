@@ -152,6 +152,17 @@ SELECT pg_temp.expect_fail('gevonden voorwerp zonder omschrijving',
 SELECT pg_temp.expect_fail('opgehaald zonder tijdstip',
     $q$INSERT INTO lost_items (festival_id, description, status) VALUES ('00000000-0000-4000-8000-000000000001', 'Zwarte jas', 'opgehaald')$q$);
 
+-- --- maillinks ---------------------------------------------------------------
+SELECT pg_temp.expect_fail('maillink verloopt voor hij gemaakt is',
+    $q$INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at) VALUES ('00000000-0000-0000-0000-000000000001', 'reset', repeat('a', 64), now() - interval '1 minute')$q$);
+SELECT pg_temp.expect_fail('resetlink langer dan 1 uur geldig',
+    $q$INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at) VALUES ('00000000-0000-0000-0000-000000000001', 'reset', repeat('b', 64), now() + interval '2 hours')$q$);
+SELECT pg_temp.expect_fail('maillink als leesbare token in plaats van hash',
+    $q$INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at) VALUES ('00000000-0000-0000-0000-000000000001', 'verify', 'geheime-token', now() + interval '1 day')$q$);
+INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at) VALUES ('00000000-0000-0000-0000-000000000001', 'verify', repeat('c', 64), now() + interval '1 day');
+SELECT pg_temp.expect_fail('dubbele maillink',
+    $q$INSERT INTO email_tokens (user_id, purpose, token_hash, expires_at) VALUES ('00000000-0000-0000-0000-000000000002', 'verify', repeat('c', 64), now() + interval '1 day')$q$);
+
 -- --- audit_log ---------------------------------------------------------------
 INSERT INTO audit_log (actor_id, action) VALUES ('00000000-0000-0000-0000-000000000001', 'auth.login');
 SELECT pg_temp.expect_fail('audit_log wijzigen',

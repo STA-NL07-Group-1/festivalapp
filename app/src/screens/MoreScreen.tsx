@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { ChevronIcon } from '../components/icons'
 import { AddTicketForm, FestivalList } from '../components/festival'
 import { BackLink, ErrorNote, Screen, Segmented, Toast, Toggle } from '../components/ui'
@@ -111,11 +111,24 @@ function MyFestivalsScreen({ onBack }: { onBack: () => void }) {
 /** Account: wat bij jou als persoon hoort en op de server staat */
 function AccountScreen({ onBack }: { onBack: () => void }) {
   const { t } = useI18n()
-  const { me, updateMe, logout, deleteAccount } = useSession()
+  const { me, updateMe, logout, deleteAccount, resendVerifyEmail } = useSession()
   const [toast, setToast] = useState<string | null>(null)
   const [name, setName] = useState(me?.displayName ?? '')
+  const [sending, setSending] = useState(false)
 
   if (!me) return null
+
+  const resend = async () => {
+    setSending(true)
+    try {
+      await resendVerifyEmail()
+      setToast(t('account.verifySent'))
+    } catch (e) {
+      setToast(e instanceof ApiError && e.status === 429 ? t('auth.rateLimited') : t('common.error'))
+    } finally {
+      setSending(false)
+    }
+  }
 
   const save = async (patch: Parameters<typeof updateMe>[0]) => {
     await updateMe(patch)
@@ -125,6 +138,17 @@ function AccountScreen({ onBack }: { onBack: () => void }) {
   return (
     <Screen title={t('more.account')}>
       <BackLink title={t('more.account')} onBack={onBack} />
+
+      {/* === false: een oud profiel uit de offline opslag heeft dit veld nog niet */}
+      {me.emailVerified === false && (
+        <section className="card verify-email" role="status">
+          <h2>{t('account.verifyTitle')}</h2>
+          <p>{t('account.verifyText', { email: me.email })}</p>
+          <button type="button" className="button small" disabled={sending} onClick={() => void resend()}>
+            {sending ? t('common.loading') : t('account.verifyResend')}
+          </button>
+        </section>
+      )}
 
       <section className="card">
         <h2>{t('settings.profile')}</h2>
@@ -150,6 +174,8 @@ function AccountScreen({ onBack }: { onBack: () => void }) {
         <Toggle label={t('settings.shareTimetable')} checked={me.shareTimetable} onChange={(v) => void save({ shareTimetable: v })} />
       </section>
 
+      <ChangePasswordForm onChanged={() => setToast(t('account.passwordChanged'))} />
+
       <section className="card">
         <h2>{t('settings.account')}</h2>
         <div className="stack">
@@ -169,6 +195,63 @@ function AccountScreen({ onBack }: { onBack: () => void }) {
       </section>
       <Toast message={toast} onDone={() => setToast(null)} />
     </Screen>
+  )
+}
+
+/** Wachtwoord wijzigen terwijl je ingelogd bent */
+function ChangePasswordForm({ onChanged }: { onChanged: () => void }) {
+  const { t } = useI18n()
+  const { changePassword } = useSession()
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    const value = (name: string) => String(form.get(name) ?? '')
+    if (value('newPassword') !== value('repeat')) {
+      setError(t('auth.passwordMismatch'))
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await changePassword(value('currentPassword'), value('newPassword'))
+      formElement.reset()
+      onChanged()
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) setError(t('auth.rateLimited'))
+      else if (e instanceof ApiError && e.status === 400) setError(e.message)
+      else setError(t('common.error'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="card">
+      <h2>{t('account.password')}</h2>
+      <form className="form" onSubmit={submit}>
+        <label>
+          {t('account.currentPassword')}
+          <input name="currentPassword" type="password" required maxLength={128} autoComplete="current-password" />
+        </label>
+        <label>
+          {t('auth.newPassword')}
+          <input name="newPassword" type="password" required minLength={12} maxLength={128} autoComplete="new-password" />
+          <small>{t('auth.passwordHint')}</small>
+        </label>
+        <label>
+          {t('auth.repeatPassword')}
+          <input name="repeat" type="password" required minLength={12} maxLength={128} autoComplete="new-password" />
+        </label>
+        {error && <ErrorNote>{error}</ErrorNote>}
+        <button className="button" disabled={busy}>
+          {busy ? t('common.loading') : t('account.password')}
+        </button>
+      </form>
+    </section>
   )
 }
 

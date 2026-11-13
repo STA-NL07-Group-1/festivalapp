@@ -8,16 +8,16 @@ PostgreSQL 16 of nieuwer. Eigenaar: **Bob** (Network & Cloud), review op securit
 |---|---|
 | `migrations/0001_init.sql` | Eerste schema: 17 tabellen, enums, constraints, triggers. **Bron van waarheid.** |
 | `schema.dbml` | Hetzelfde schema als diagram. Plak het in [dbdiagram.io](https://dbdiagram.io). |
-| `constraints-test.sql` | Probeert 42 ongeldige dingen op te slaan en controleert dat de database ze weigert. |
+| `constraints-test.sql` | Probeert 46 ongeldige dingen op te slaan en controleert dat de database ze weigert. |
 | `create-test-db.sql` | Maakt `festivalapp_test` aan als je `docker compose up` gebruikt. |
 
-## De 24 tabellen
+## De 25 tabellen
 
 | Groep | Tabellen |
 |---|---|
 | Festivals en rollen | `festivals`, `festival_members`, `festival_blocks` |
 | Festivalinformatie | `faq_items`, `site_maps`, `lost_items` (en de huisregels in `festivals`) |
-| Accounts | `tickets`, `users`, `sessions` |
+| Accounts | `tickets`, `users`, `sessions`, `email_tokens` |
 | Sociaal | `friend_codes`, `friendships`, `locations`, `pins`, `messages` |
 | Programma | `stages`, `performances`, `timetable_entries`, `show_signups`, `crowd_readings` |
 | Organisatie | `push_subscriptions`, `announcements`, `sos_alerts`, `map_points`, `audit_log` |
@@ -29,6 +29,9 @@ horen via hun podium bij een festival. Vrienden en chats horen bij het account e
 Rollen staan niet meer in `users`. Wie in `festival_members` staat is personeel van dat festival
 (`beheerder`, `organisatie`, `ehbo` of `beveiliging`); wie alleen een ticket heeft is bezoeker.
 `users.platform_role` is voor de twee rollen over alle festivals heen: `eigenaar` en `sudo`.
+
+Sinds migratie 0006 staat in `users.email_verified_at` of het e-mailadres is bevestigd. Links uit een mail
+(e-mailadres bevestigen, wachtwoord vergeten) staan in `email_tokens`, alleen als SHA-256 en maar één keer te gebruiken.
 
 Daarnaast houdt `npm run db:migrate` in de tabel `schema_migrations` bij welke migraties al gedraaid zijn.
 
@@ -51,9 +54,10 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/constraints-test.sql
 - **Nooit een bestaande migratie aanpassen** nadat die op `main` staat. Maak een nieuwe:
   `0002_<korte_omschrijving>.sql`. Elke migratie staat in een `BEGIN; … COMMIT;`.
 - **Geheimen alleen als hash.** Wachtwoorden met argon2id; refresh-tokens, ticketcodes,
-  vriendcodes en IoT-sleutels met SHA-256 (het zijn lange willekeurige waarden).
+  vriendcodes, maillinks en IoT-sleutels met SHA-256 (het zijn lange willekeurige waarden).
 - **Dataminimalisatie.** `locations` heeft één rij per gebruiker en verloopt binnen een uur.
   De backend verwijdert verlopen rijen elke minuut (`DELETE FROM locations WHERE expires_at < now()`).
+  Verlopen en gebruikte `email_tokens` worden na een dag opgeruimd.
   Na het festival worden `messages`, `locations`, `pins` en `sos_alerts` gewist (zie
   `docs/security-eisen.md`).
 - **Integriteit in de database.** Wat de database kan afdwingen (bereik, uniek, volgorde),

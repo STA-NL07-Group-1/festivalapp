@@ -10,6 +10,7 @@ import { createApp, createHttpServer } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 import { createPool } from '../src/db.ts'
 import { resolveSocket } from '../src/festival.ts'
+import type { Mail } from '../src/mail.ts'
 import { createPush } from '../src/push.ts'
 import { attachRealtime } from '../src/realtime.ts'
 import { migrate } from '../scripts/migrate.ts'
@@ -20,6 +21,16 @@ const IOT_KEY = 'sensor-geheim-voor-tests'
 
 let base = ''
 let close: () => Promise<void> = async () => {}
+// Mails gaan in tests niet naar Resend, maar naar deze lijst
+const mailbox: Mail[] = []
+
+/** De token uit de link in de laatste mail aan dit adres (?verify= of ?reset=) */
+function linkToken(to: string, param: 'verify' | 'reset'): string {
+  const mail = [...mailbox].reverse().find((m) => m.to === to && m.text.includes(`?${param}=`))
+  expect(mail, `geen ${param}-mail aan ${to}`).toBeDefined()
+  const url = mail!.text.match(/https?:\/\/\S+/)![0]
+  return new URL(url).searchParams.get(param)!
+}
 
 async function resetDatabase(url: string) {
   const client = new pg.Client({ connectionString: url })
@@ -41,7 +52,8 @@ beforeAll(async () => {
     iotDeviceKeys: new Map([[createHash('sha256').update(IOT_KEY).digest('hex'), 'test-sensor']]),
   })
   const db = createPool(databaseUrl)
-  const { handler, deps } = createApp({ db, config, push: createPush(db, null) })
+  const mailer = { enabled: true, send: async (mail: Mail) => void mailbox.push(mail) }
+  const { handler, deps } = createApp({ db, config, push: createPush(db, null), mailer })
   const server = createHttpServer(handler)
   deps.realtime = attachRealtime(server, {
     jwtSecret: config.jwtSecret,
@@ -207,6 +219,86 @@ describe.skipIf(!databaseUrl)('backend', () => {
         body: { ticketCode: user.ticketCode, email: 'gijs2@test.nl', password: 'een-heel-sterk-wachtwoord', displayName: 'Gijs' },
       })
       expect(again.status).toBe(201)
+    })
+  })
+
+  describe('mail en wachtwoord', () => {
+    it('registreren stuurt een welkomstmail; de link bevestigt het e-mailadres maar één keer', async () => {
+      const user = await register('Hidde')
+      expect((await api('GET', '/me', { token: user.accessToken })).body.emailVerified).toBe(false)
+      const welcome = mailbox.findLast((m) => m.to === 'hidde@test.nl')
+      expect(welcome?.subject).toBe('Welkom bij Festival Buddy')
+      expect(welcome?.html).toContain('Welkom, Hidde!')
+
+      const token = linkToken('hidde@test.nl', 'verify')
+      expect((await api('POST', '/auth/verify-email', { body: { token } })).status).toBe(204)
+      expect((await api('GET', '/me', { token: user.accessToken })).body.emailVerified).toBe(true)
+      expect((await api('POST', '/auth/verify-email', { body: { token } })).status).toBe(400)
+    })
+
+    it('opnieuw sturen maakt de oude link ongeldig, en stuurt niets als het adres al bevestigd is', async () => {
+      const user = await register('Ilona')
+      const old = linkToken('ilona@test.nl', 'verify')
+      expect((await api('POST', '/me/verify-email', { token: user.accessToken })).status).toBe(204)
+      const fresh = linkToken('ilona@test.nl', 'verify')
+      expect(fresh).not.toBe(old)
+      expect((await api('POST', '/auth/verify-email', { body: { token: old } })).status).toBe(400)
+      expect((await api('POST', '/auth/verify-email', { body: { token: fresh } })).status).toBe(204)
+
+      const before = mailbox.length
+      expect((await api('POST', '/me/verify-email', { token: user.accessToken })).status).toBe(204)
+      expect(mailbox.length).toBe(before)
+    })
+
+    it('wachtwoord vergeten: zelfde antwoord voor een onbekend adres, en daar gaat geen mail heen', async () => {
+      const before = mailbox.length
+      const res = await api('POST', '/auth/forgot-password', { body: { email: 'niemand@test.nl' } })
+      expect(res.status).toBe(204)
+      expect(mailbox.length).toBe(before)
+    })
+
+    it('wachtwoord herstellen met de link: oude sessies vervallen en de link werkt maar één keer', async () => {
+      const user = await register('Jules')
+      expect((await api('POST', '/auth/forgot-password', { body: { email: 'jules@test.nl' } })).status).toBe(204)
+      const token = linkToken('jules@test.nl', 'reset')
+
+      // Te zwak: geweigerd, maar de link blijft bruikbaar
+      const weak = await api('POST', '/auth/reset-password', { body: { token, password: 'wachtwoord123' } })
+      expect(weak.status).toBe(400)
+
+      const ok = await api('POST', '/auth/reset-password', { body: { token, password: 'nieuw-en-heel-sterk-wachtwoord' } })
+      expect(ok.status).toBe(204)
+      expect(mailbox.findLast((m) => m.to === 'jules@test.nl')?.subject).toBe('Je wachtwoord is gewijzigd')
+      expect((await api('POST', '/auth/refresh', { body: { refreshToken: user.refreshToken } })).status).toBe(401)
+      expect((await api('POST', '/auth/login', { body: { email: 'jules@test.nl', password: 'een-heel-sterk-wachtwoord' } })).status).toBe(401)
+      await login('jules@test.nl', 'nieuw-en-heel-sterk-wachtwoord')
+      // De link bewijst ook dat het e-mailadres van jou is
+      const me = await api('GET', '/me', { token: (await login('jules@test.nl', 'nieuw-en-heel-sterk-wachtwoord')).accessToken })
+      expect(me.body.emailVerified).toBe(true)
+
+      const again = await api('POST', '/auth/reset-password', { body: { token, password: 'nog-een-ander-sterk-wachtwoord' } })
+      expect(again.status).toBe(400)
+    })
+
+    it('ingelogd wachtwoord wijzigen: fout huidig wachtwoord geeft 400 (geen uitlog), daarna nieuwe tokens', async () => {
+      const user = await register('Koen')
+      const wrong = await api('PUT', '/me/password', {
+        token: user.accessToken,
+        body: { currentPassword: 'niet-mijn-wachtwoord', newPassword: 'nieuw-en-heel-sterk-wachtwoord' },
+      })
+      expect(wrong.status).toBe(400)
+
+      const res = await api('PUT', '/me/password', {
+        token: user.accessToken,
+        body: { currentPassword: 'een-heel-sterk-wachtwoord', newPassword: 'nieuw-en-heel-sterk-wachtwoord' },
+      })
+      expect(res.status).toBe(200)
+      expect(res.body.refreshToken).toBeTruthy()
+      // Andere sessies zijn ingetrokken, de nieuwe werkt
+      expect((await api('POST', '/auth/refresh', { body: { refreshToken: user.refreshToken } })).status).toBe(401)
+      expect((await api('POST', '/auth/refresh', { body: { refreshToken: res.body.refreshToken } })).status).toBe(200)
+      await login('koen@test.nl', 'nieuw-en-heel-sterk-wachtwoord')
+      expect(mailbox.findLast((m) => m.to === 'koen@test.nl')?.subject).toBe('Je wachtwoord is gewijzigd')
     })
   })
 

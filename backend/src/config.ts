@@ -13,6 +13,8 @@ export interface Config {
   vapid: { publicKey: string; privateKey: string; subject: string } | null
   iotDeviceKeys: Map<string, string> // sha256(sleutel) → apparaat-id
   ai: { apiKey: string; model: string } | null
+  /** Mail via Resend; null = mails alleen in de log */
+  mail: { apiKey: string; from: string } | null
   festivalTimeZone: string
 }
 
@@ -58,6 +60,9 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     iotDeviceKeys,
     ai: process.env.AI_API_KEY
       ? { apiKey: process.env.AI_API_KEY, model: process.env.AI_MODEL ?? 'claude-haiku-5-5' }
+      : null,
+    mail: process.env.RESEND_API_KEY
+      ? { apiKey: process.env.RESEND_API_KEY, from: process.env.MAIL_FROM ?? 'Festival Buddy <no-reply@festivalbuddy.nl>' }
       : null,
     festivalTimeZone: process.env.FESTIVAL_TIME_ZONE ?? 'Europe/Amsterdam',
     ...overrides,
