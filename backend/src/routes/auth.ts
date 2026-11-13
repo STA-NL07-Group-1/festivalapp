@@ -221,8 +221,9 @@ export function authRoutes(r: Router, deps: Deps): void {
         [row.user_id, await hashPassword(password)],
       )
       await tx.query(`UPDATE email_tokens SET used_at = now() WHERE user_id = $1 AND purpose = 'reset' AND used_at IS NULL`, [row.user_id])
-      // Wie het oude wachtwoord kende, is nu overal uitgelogd
-      await tx.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [row.user_id])
+      // Wie het oude wachtwoord kende, is nu overal uitgelogd. Verwijderen en niet intrekken: een ingetrokken
+      // refresh-token dat terugkomt geldt als gestolen (zie /auth/refresh) en zou ook de nieuwe sessies uitloggen.
+      await tx.query('DELETE FROM sessions WHERE user_id = $1', [row.user_id])
       await audit(tx, row.user_id, 'auth.password_reset', undefined, { ip: ctx.ip })
       return row
     })
@@ -248,8 +249,9 @@ export function authRoutes(r: Router, deps: Deps): void {
     if (isWeakPassword(newPassword, row.email)) throw badRequest('Kies een sterker wachtwoord.')
     await transaction(db, async (tx) => {
       await tx.query('UPDATE users SET password_hash = $2 WHERE id = $1', [current.id, await hashPassword(newPassword)])
-      // Andere apparaten uitloggen; dit apparaat krijgt hieronder nieuwe tokens
-      await tx.query('UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [current.id])
+      // Andere apparaten uitloggen; dit apparaat krijgt hieronder nieuwe tokens. Verwijderen en niet intrekken:
+      // anders logt een ander apparaat dat later zijn oude token probeert ook deze nieuwe sessie uit (zie /auth/refresh).
+      await tx.query('DELETE FROM sessions WHERE user_id = $1', [current.id])
       await audit(tx, current.id, 'auth.password_changed')
     })
     sendInBackground(passwordChangedMail(row.locale, { to: row.email }))
