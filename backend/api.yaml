@@ -191,6 +191,67 @@ paths:
         '204': { description: Uitgelogd }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /auth/verify-email:
+    post:
+      tags: [auth]
+      operationId: verifyEmail
+      summary: Bevestig je e-mailadres met de link uit de mail
+      description: De link werkt maar één keer en is 24 uur geldig.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyEmailRequest' }
+      responses:
+        '204': { description: E-mailadres bevestigd }
+        '400':
+          description: Link ongeldig, al gebruikt of verlopen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      operationId: forgotPassword
+      summary: Vraag een mail aan om een nieuw wachtwoord in te stellen
+      description: >-
+        Geeft altijd 204, ook als het e-mailadres onbekend is, zodat niet te achterhalen is welke
+        adressen een account hebben. De link in de mail is 30 minuten geldig en werkt maar één keer.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+      responses:
+        '204': { description: Als het adres bekend is, is er een mail verstuurd }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      operationId: resetPassword
+      summary: Stel een nieuw wachtwoord in met de link uit de mail
+      description: Alle sessies worden ingetrokken; daarna log je opnieuw in. Een vergrendeling na te veel mislukte pogingen vervalt.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '204': { description: Wachtwoord gewijzigd }
+        '400':
+          description: Link ongeldig, al gebruikt of verlopen, of het wachtwoord is te zwak
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
   # ---------------------------------------------------------------- account
   /me:
     get:
@@ -206,6 +267,7 @@ paths:
               example:
                 id: 7d1c2c5e-6f4b-4c39-9c1e-0a5b8f0b1a11
                 email: anna@example.org
+                emailVerified: true
                 displayName: Anna
                 role: bezoeker
                 platformRole: null
@@ -248,6 +310,40 @@ paths:
       responses:
         '204': { description: Account verwijderd }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/password:
+    put:
+      tags: [account]
+      operationId: changePassword
+      summary: Wijzig je wachtwoord
+      description: >-
+        Andere apparaten worden uitgelogd; dit apparaat krijgt nieuwe tokens. Een fout huidig
+        wachtwoord geeft 400 (geen 401), zodat de app je niet uitlogt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '200':
+          description: Wachtwoord gewijzigd, nieuwe tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /me/verify-email:
+    post:
+      tags: [account]
+      operationId: resendVerifyEmail
+      summary: Stuur de mail om je e-mailadres te bevestigen opnieuw
+      description: Doet niets als je e-mailadres al bevestigd is. Een oudere link werkt daarna niet meer.
+      responses:
+        '204': { description: Mail verstuurd (of niet nodig) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /me/location:
     put:
@@ -1725,6 +1821,42 @@ components:
       properties:
         email: { type: string, format: email, maxLength: 254 }
         password: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+    VerifyEmailRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: { type: string, minLength: 20, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' }
+    ForgotPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token: { type: string, minLength: 20, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' }
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          writeOnly: true
+          description: Zelfde eisen als bij registreren.
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        newPassword:
+          type: string
+          minLength: 12
+          maxLength: 128
+          writeOnly: true
+          description: Zelfde eisen als bij registreren.
     RefreshRequest:
       type: object
       additionalProperties: false
@@ -1754,10 +1886,11 @@ components:
       x-table: users
       additionalProperties: false
       x-computed: [role, festivalId]
-      required: [id, email, displayName, role, platformRole, festivalId, theme, locale, shareLocation, shareTimetable]
+      required: [id, email, emailVerified, displayName, role, platformRole, festivalId, theme, locale, shareLocation, shareTimetable]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
+        emailVerified: { type: boolean, description: 'Is het e-mailadres bevestigd via de link uit de mail?' }
         displayName: { type: string }
         role: { $ref: '#/components/schemas/Role' }
         platformRole:

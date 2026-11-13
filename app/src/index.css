@@ -1773,6 +1773,17 @@ a.row {
 .list-title:first-child {
   margin-top: 0;
 }
+/* Account: e-mailadres nog niet bevestigd */
+.card.verify-email {
+  border-color: var(--warning);
+}
+.card.verify-email .button {
+  justify-self: start;
+}
+/* "Wachtwoord vergeten?" in het inlogformulier */
+.form .link {
+  justify-self: start;
+}
 /* Rij zonder knop (alleen informatie) */
 .row.static {
   cursor: default;

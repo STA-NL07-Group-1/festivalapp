@@ -68,6 +68,7 @@ backend/            Node.js 24 + TypeScript, REST + WebSockets (Bob)
 | MVP | Waar |
 |---|---|
 | Accounts gekoppeld aan een festivalticket | `backend/src/routes/auth.ts`, `app/src/screens/AuthScreen.tsx` |
+| Mail: welkom, e-mailadres bevestigen, wachtwoord vergeten en wijzigen | `backend/src/mail.ts` (Resend), `auth.ts`, `AuthScreen.tsx`, Account in `MoreScreen.tsx` |
 | Vrienden via tijdelijke code of QR | `social.ts`, `FriendsScreen.tsx` (QR tonen + scannen) |
 | Live kaart met vrienden en pins | `social.ts`, `MapScreen.tsx` (Leaflet + OpenStreetMap) |
 | Chat tussen vrienden | `social.ts`, `ChatScreen.tsx` |
@@ -88,7 +89,8 @@ backend/            Node.js 24 + TypeScript, REST + WebSockets (Bob)
 - Alle request bodies worden gevalideerd tegen `backend/api.yaml` (onbekende velden → 400).
 - Wachtwoorden met argon2id; tokens en codes alleen als SHA-256-hash in de database.
 - Access-token 15 minuten; refresh-token roteert, hergebruik trekt alle sessies in.
-- Rate limiting op inloggen, registreren, vriendcodes, SOS, chat en chatbot.
+- Links uit een mail werken één keer (reset 30 minuten, bevestigen 24 uur); "wachtwoord vergeten" verraadt niet of een adres bestaat; na een nieuw wachtwoord ben je overal uitgelogd.
+- Rate limiting op inloggen, registreren, mails, vriendcodes, SOS, chat en chatbot.
 - Locatie en timetable delen staan standaard uit; alleen de laatste locatie, max. 10 minuten.
 - Rollen worden in de backend afgedwongen; portal-acties komen in een append-only `audit_log`.
 - Pushmeldingen bevatten geen chatinhoud; de chatbot krijgt geen persoonsgegevens.

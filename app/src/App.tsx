@@ -1,12 +1,13 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { api, type Announcement, type Friend } from './api/client'
 import { FestivalBar, NoFestivalScreen } from './components/festival'
+import { Toast } from './components/ui'
 import { BellIcon, CalendarIcon, MapIcon, MenuIcon, UsersIcon } from './components/icons'
 import { useI18n } from './i18n'
 import { useAsync } from './lib/useAsync'
-import { AuthScreen } from './screens/AuthScreen'
+import { AuthScreen, ResetPasswordScreen } from './screens/AuthScreen'
 import { ChatScreen } from './screens/ChatScreen'
 import { FriendsScreen } from './screens/FriendsScreen'
 import { MapScreen } from './screens/MapScreen'
@@ -46,6 +47,27 @@ function withTransition(update: () => void) {
   }
   doc.startViewTransition(() => flushSync(update))
 }
+
+/**
+ * Links uit een mail: ?reset=… (nieuw wachtwoord) of ?verify=… (e-mailadres bevestigen).
+ * Eén keer lezen bij het laden en meteen uit de adresbalk halen, zodat de token niet in de geschiedenis blijft.
+ */
+function readMailLink(): { kind: 'reset' | 'verify'; token: string } | null {
+  const params = new URLSearchParams(window.location.search)
+  const reset = params.get('reset')
+  const verify = params.get('verify')
+  if (!reset && !verify) return null
+  params.delete('reset')
+  params.delete('verify')
+  const rest = params.toString()
+  window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''))
+  return reset ? { kind: 'reset', token: reset } : { kind: 'verify', token: verify! }
+}
+const mailLink = readMailLink()
+
+// Eén verzoek per link, ook als React het effect twee keer draait (StrictMode)
+let verifying: Promise<boolean> | null = null
+const verifyOnce = (token: string) => (verifying ??= api.post('/auth/verify-email', { token }).then(() => true, () => false))
 
 function readDismissed(): string[] {
   try {
@@ -212,9 +234,47 @@ function Shell() {
   )
 }
 
+/** Bevestigt het e-mailadres uit een ?verify=-link en laat zien of het gelukt is */
+function VerifyEmailNotice({ token, children }: { token: string; children: ReactNode }) {
+  const { t } = useI18n()
+  const { markEmailVerified } = useSession()
+  const [message, setMessage] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void verifyOnce(token).then((ok) => {
+      if (cancelled) return
+      if (ok) markEmailVerified()
+      setMessage(ok ? t('mail.verified') : t('mail.linkInvalid'))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [token, markEmailVerified, t])
+  return (
+    <>
+      {children}
+      <Toast message={message} onDone={() => setMessage(null)} />
+    </>
+  )
+}
+
 function Gate() {
   const { status } = useSession()
   const { t } = useI18n()
+  const [resetToken, setResetToken] = useState(mailLink?.kind === 'reset' ? mailLink.token : null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  if (resetToken) {
+    return (
+      <ResetPasswordScreen
+        token={resetToken}
+        onDone={() => {
+          setResetToken(null)
+          setNotice(t('auth.resetDone'))
+        }}
+      />
+    )
+  }
   if (status === 'loading') {
     return (
       <div className="splash" role="status">
@@ -223,7 +283,8 @@ function Gate() {
       </div>
     )
   }
-  return status === 'authenticated' ? <Shell /> : <AuthScreen />
+  const screen = status === 'authenticated' ? <Shell /> : <AuthScreen notice={notice} />
+  return mailLink?.kind === 'verify' ? <VerifyEmailNotice token={mailLink.token}>{screen}</VerifyEmailNotice> : screen
 }
 
 export default function App() {

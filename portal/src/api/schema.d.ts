@@ -92,6 +92,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bevestig je e-mailadres met de link uit de mail
+         * @description De link werkt maar één keer en is 24 uur geldig.
+         */
+        post: operations["verifyEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Vraag een mail aan om een nieuw wachtwoord in te stellen
+         * @description Geeft altijd 204, ook als het e-mailadres onbekend is, zodat niet te achterhalen is welke adressen een account hebben. De link in de mail is 30 minuten geldig en werkt maar één keer.
+         */
+        post: operations["forgotPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stel een nieuw wachtwoord in met de link uit de mail
+         * @description Alle sessies worden ingetrokken; daarna log je opnieuw in. Een vergrendeling na te veel mislukte pogingen vervalt.
+         */
+        post: operations["resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -109,6 +169,46 @@ export interface paths {
         head?: never;
         /** Wijzig je weergavenaam of instellingen */
         patch: operations["updateMe"];
+        trace?: never;
+    };
+    "/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Wijzig je wachtwoord
+         * @description Andere apparaten worden uitgelogd; dit apparaat krijgt nieuwe tokens. Een fout huidig wachtwoord geeft 400 (geen 401), zodat de app je niet uitlogt.
+         */
+        put: operations["changePassword"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stuur de mail om je e-mailadres te bevestigen opnieuw
+         * @description Doet niets als je e-mailadres al bevestigd is. Een oudere link werkt daarna niet meer.
+         */
+        post: operations["resendVerifyEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/me/location": {
@@ -1087,6 +1187,23 @@ export interface components {
             email: string;
             password: string;
         };
+        VerifyEmailRequest: {
+            token: string;
+        };
+        ForgotPasswordRequest: {
+            /** Format: email */
+            email: string;
+        };
+        ResetPasswordRequest: {
+            token: string;
+            /** @description Zelfde eisen als bij registreren. */
+            password: string;
+        };
+        ChangePasswordRequest: {
+            currentPassword: string;
+            /** @description Zelfde eisen als bij registreren. */
+            newPassword: string;
+        };
         RefreshRequest: {
             refreshToken: string;
         };
@@ -1114,6 +1231,8 @@ export interface components {
             id: string;
             /** Format: email */
             email: string;
+            /** @description Is het e-mailadres bevestigd via de link uit de mail? */
+            emailVerified: boolean;
             displayName: string;
             role: components["schemas"]["Role"];
             platformRole: components["schemas"]["PlatformRole"] | null;
@@ -1787,6 +1906,94 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    verifyEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description E-mailadres bevestigd */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Link ongeldig, al gebruikt of verlopen */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    forgotPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgotPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Als het adres bekend is, is er een mail verstuurd */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Wachtwoord gewijzigd */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Link ongeldig, al gebruikt of verlopen, of het wachtwoord is te zwak */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     getMe: {
         parameters: {
             query?: never;
@@ -1806,6 +2013,7 @@ export interface operations {
                      * @example {
                      *       "id": "7d1c2c5e-6f4b-4c39-9c1e-0a5b8f0b1a11",
                      *       "email": "anna@example.org",
+                     *       "emailVerified": true,
                      *       "displayName": "Anna",
                      *       "role": "bezoeker",
                      *       "platformRole": null,
@@ -1877,6 +2085,53 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Wachtwoord gewijzigd, nieuwe tokens */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokens"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    resendVerifyEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mail verstuurd (of niet nodig) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     updateMyLocation: {

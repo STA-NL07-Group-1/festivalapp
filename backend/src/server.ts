@@ -22,12 +22,14 @@ const cleanup = setInterval(() => {
   db.query('DELETE FROM locations WHERE expires_at < now()').catch((e) => console.error('[cleanup]', e))
   db.query(`DELETE FROM friend_codes WHERE expires_at < now() - interval '1 day'`).catch((e) => console.error('[cleanup]', e))
   db.query(`DELETE FROM sessions WHERE expires_at < now() - interval '1 day'`).catch((e) => console.error('[cleanup]', e))
+  db.query(`DELETE FROM email_tokens WHERE expires_at < now() - interval '1 day'`).catch((e) => console.error('[cleanup]', e))
 }, 60_000)
 
 server.listen(config.port, () => {
   console.log(`Festivalapp-API draait op http://localhost:${config.port} (${config.env})`)
   if (!push.enabled) console.log('  Pushmeldingen staan uit: zet VAPID_PUBLIC_KEY en VAPID_PRIVATE_KEY in .env')
   if (!config.ai) console.log('  Chatbot gebruikt de ingebouwde FAQ: zet AI_API_KEY in .env voor een taalmodel')
+  if (!deps.mailer.enabled) console.log('  Mails komen alleen in de log: zet RESEND_API_KEY in .env om ze echt te versturen')
 })
 
 function shutdown() {

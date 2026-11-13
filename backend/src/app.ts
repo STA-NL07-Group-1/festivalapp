@@ -17,6 +17,7 @@ import {
   type Context,
 } from './http.ts'
 import { loadAccess, pickFestival } from './festival.ts'
+import { createMailer, type Mailer } from './mail.ts'
 import type { Push } from './push.ts'
 import { noRealtime, type Realtime } from './realtime.ts'
 import { sha256, verifyAccessToken } from './security.ts'
@@ -27,6 +28,7 @@ export interface Deps {
   db: Db
   config: Config
   push: Push
+  mailer: Mailer
   /** Wordt na het starten van de server ingevuld */
   realtime: Realtime
   limiter: RateLimiter
@@ -47,8 +49,8 @@ function clientIp(req: IncomingMessage): string {
   return req.socket.remoteAddress ?? 'onbekend'
 }
 
-export function createApp(deps: Omit<Deps, 'realtime' | 'limiter'> & Partial<Pick<Deps, 'realtime' | 'limiter'>>) {
-  const fullDeps: Deps = { realtime: noRealtime, limiter: new RateLimiter(), ...deps }
+export function createApp(deps: Omit<Deps, 'realtime' | 'limiter' | 'mailer'> & Partial<Pick<Deps, 'realtime' | 'limiter' | 'mailer'>>) {
+  const fullDeps: Deps = { realtime: noRealtime, limiter: new RateLimiter(), mailer: createMailer(deps.config.mail), ...deps }
   const router = new Router()
   registerRoutes(router, fullDeps)
 
