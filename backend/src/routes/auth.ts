@@ -2,7 +2,7 @@ import type { Deps } from '../app.ts'
 import { audit, transaction, type Queryable } from '../db.ts'
 import { HttpError, badRequest, conflict, requireUser, unauthorized, type Router } from '../http.ts'
 import { passwordChangedMail, resetMail, verifyMail, welcomeMail, type Mail } from '../mail.ts'
-import { hashPassword, isWeakPassword, randomToken, sha256, signAccessToken, verifyPassword } from '../security.ts'
+import { hashPassword, randomToken, sha256, signAccessToken, verifyPassword, weakPasswordReason } from '../security.ts'
 
 const MAX_FAILED_LOGINS = 10
 const LOCK_MINUTES = 15
@@ -64,7 +64,8 @@ export function authRoutes(r: Router, deps: Deps): void {
   r.post('/auth/register', { operationId: 'register', auth: 'none', rateLimit: { limit: 5, windowMs: 60_000 } }, async (ctx) => {
     const body = ctx.body as { ticketCode: string; email: string; password: string; displayName: string; locale?: 'nl' | 'en' }
     const email = body.email.trim().toLowerCase()
-    if (isWeakPassword(body.password, email)) throw badRequest('Kies een sterker wachtwoord.')
+    const weak = weakPasswordReason(body.password, email)
+    if (weak) throw badRequest(weak)
     const displayName = body.displayName.trim()
     if (!displayName) throw badRequest('Het veld "displayName" is te kort.')
 
@@ -213,7 +214,8 @@ export function authRoutes(r: Router, deps: Deps): void {
       const row = rows[0]
       if (!row) throw badRequest(INVALID_LINK)
       // Eerst het wachtwoord controleren: is het te zwak, dan blijft de link bruikbaar voor een nieuwe poging
-      if (isWeakPassword(password, row.email)) throw badRequest('Kies een sterker wachtwoord.')
+      const weak = weakPasswordReason(password, row.email)
+      if (weak) throw badRequest(weak)
       await tx.query(
         `UPDATE users SET password_hash = $2, failed_logins = 0, locked_until = NULL,
                 email_verified_at = COALESCE(email_verified_at, now())
@@ -246,7 +248,8 @@ export function authRoutes(r: Router, deps: Deps): void {
       await audit(db, current.id, 'auth.password_change_failed', undefined, { ip: ctx.ip })
       throw badRequest('Je huidige wachtwoord klopt niet.')
     }
-    if (isWeakPassword(newPassword, row.email)) throw badRequest('Kies een sterker wachtwoord.')
+    const weak = weakPasswordReason(newPassword, row.email)
+    if (weak) throw badRequest(weak)
     await transaction(db, async (tx) => {
       await tx.query('UPDATE users SET password_hash = $2 WHERE id = $1', [current.id, await hashPassword(newPassword)])
       // Andere apparaten uitloggen; dit apparaat krijgt hieronder nieuwe tokens. Verwijderen en niet intrekken:
