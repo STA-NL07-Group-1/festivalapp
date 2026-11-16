@@ -4,7 +4,7 @@
 
 Project festivalapp {
   database_type: 'PostgreSQL'
-  Note: 'Meerdere festivals in één installatie (migratie 0004). Geheimen alleen als hash. Alleen de laatste locatie per gebruiker.'
+  Note: '''Meerdere festivals in één installatie (migratie 0004). Geheimen alleen als hash. Alleen de laatste locatie per gebruiker. Groepen en gedeelde foto's sinds migratie 0008.'''
 }
 
 Enum platform_role {
@@ -33,6 +33,17 @@ Enum app_theme {
 Enum app_locale {
   nl
   en
+}
+
+Enum group_role {
+  beheerder [note: 'Beheert naam, foto en leden. Er is altijd minstens één.']
+  lid
+}
+
+Enum message_kind {
+  tekst
+  foto
+  systeem [note: 'Regel als "Bob heeft Niek toegevoegd"; alleen in groepen']
 }
 
 Enum email_token_purpose {
@@ -111,9 +122,13 @@ TableGroup festivalinformatie {
 TableGroup sociaal {
   friend_codes
   friendships
+  friend_requests
   locations
   pins
   messages
+  photos
+  groups
+  group_members
 }
 
 TableGroup programma {
@@ -286,17 +301,76 @@ Table pins {
   created_at timestamptz [not null, default: `now()`]
 }
 
+Table friend_requests {
+  from_user uuid [not null, ref: > users.id]
+  to_user uuid [not null, ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  indexes {
+    (from_user, to_user) [pk]
+    to_user [name: 'friend_requests_to_idx']
+  }
+  Note: 'Vriendschapsverzoek (migratie 0008). Eigen tabel: een rij in friendships betekent altijd "vrienden" en geeft toegang tot locatie, pins en timetable.'
+}
+
 Table messages {
   id uuid [pk, default: `gen_random_uuid()`]
   sender_id uuid [not null, ref: > users.id]
-  recipient_id uuid [not null, ref: > users.id]
-  body text [not null, note: '1–1000 tekens']
-  created_at timestamptz [not null, default: `now()`]
-  read_at timestamptz
+  recipient_id uuid [ref: > users.id, note: 'Gesprek met één vriend; NULL in een groep']
+  group_id uuid [ref: > groups.id, note: 'Groepsbericht; NULL in een gesprek met één vriend (migratie 0008)']
+  kind message_kind [not null, default: 'tekst']
+  body text [note: '1–1000 tekens; bij een foto het bijschrift. Leeg bij een verwijderd bericht.']
+  photo_id uuid [ref: > photos.id, note: 'NULL als de foto is weggehaald; het bericht blijft staan']
+  reply_to_id uuid [ref: > messages.id, note: 'Reactie op dit bericht (quote)']
+  system_event jsonb [note: 'Alleen bij kind = systeem: { type, actor, targets, value }']
+  reactions jsonb [not null, default: '{}', note: 'Emoji-reacties: { "<user-id>": "👍" }, één per persoon']
+  created_at timestamptz [not null, default: `clock_timestamp()`]
+  read_at timestamptz [note: 'Alleen bij een gesprek met één vriend; een groep gebruikt group_members.last_read_at']
+  deleted_at timestamptz [note: 'Verwijderd: geen tekst, foto of reacties meer']
   client_id uuid [note: 'Id van de app; uniek per afzender, zodat een opnieuw verstuurd bericht niet dubbel komt (migratie 0007)']
 
   indexes {
     (sender_id, client_id) [unique, name: 'messages_sender_client_idx']
+    (group_id, created_at) [name: 'messages_group_idx']
+  }
+  Note: 'Precies één van recipient_id en group_id is gevuld.'
+}
+
+Table photos {
+  id uuid [pk, default: `gen_random_uuid()`]
+  uploaded_by uuid [not null, ref: > users.id]
+  group_id uuid [ref: > groups.id, note: 'Album van een groep']
+  user_a uuid [ref: > users.id, note: 'Album van twee mensen samen (user_a < user_b)']
+  user_b uuid [ref: > users.id]
+  content_type text [not null, note: 'jpeg, png, gif, webp, avif, heic, heif, bmp of tiff; geen svg']
+  data bytea [not null, note: 'max. 25 MB']
+  caption text [note: 'max. 1000 tekens']
+  created_at timestamptz [not null, default: `clock_timestamp()`]
+  Note: '''Gedeelde foto's (migratie 0008). Precies één van group_id en het paar user_a/user_b is gevuld.'''
+}
+
+Table groups {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name text [not null, note: '1–60 tekens']
+  description text [note: 'max. 500 tekens']
+  picture_type text [note: 'Groepsfoto; hoort niet bij het album']
+  picture_data bytea [note: 'max. 25 MB']
+  picture_updated_at timestamptz
+  created_by uuid [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+  Note: 'Groepsapp (migratie 0008)'
+}
+
+Table group_members {
+  group_id uuid [not null, ref: > groups.id]
+  user_id uuid [not null, ref: > users.id]
+  role group_role [not null, default: 'lid']
+  added_by uuid [ref: > users.id]
+  joined_at timestamptz [not null, default: `now()`]
+  last_read_at timestamptz [not null, default: `now()`, note: 'Alles daarna telt als ongelezen']
+  muted boolean [not null, default: false, note: 'Geen pushmeldingen van deze groep']
+  indexes {
+    (group_id, user_id) [pk]
+    user_id [name: 'group_members_user_idx']
   }
 }
 
