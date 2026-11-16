@@ -10,14 +10,15 @@
 import { pathToFileURL } from 'node:url'
 import pg from 'pg'
 import { loadConfig } from '../src/config.ts'
-import { hashPassword, isWeakPassword } from '../src/security.ts'
+import { hashPassword, weakPasswordReason } from '../src/security.ts'
 
 const ROLES = ['beheerder', 'organisatie', 'ehbo', 'beveiliging']
 
 export async function createAdmin(databaseUrl: string, input: { email: string; name: string; role: string; password: string; festivalId?: string }) {
   const email = input.email.trim().toLowerCase()
   if (!ROLES.includes(input.role)) throw new Error(`ADMIN_ROLE moet een van deze zijn: ${ROLES.join(', ')}`)
-  if (input.password.length < 12 || isWeakPassword(input.password, email)) throw new Error('Kies een sterker wachtwoord (minstens 12 tekens)')
+  const weak = weakPasswordReason(input.password, email)
+  if (weak) throw new Error(weak)
   const client = new pg.Client({ connectionString: databaseUrl })
   await client.connect()
   try {

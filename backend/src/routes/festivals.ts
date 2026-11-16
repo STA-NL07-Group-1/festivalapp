@@ -9,7 +9,7 @@ import type { Deps } from '../app.ts'
 import { audit, transaction } from '../db.ts'
 import { canAssign, loadAccess } from '../festival.ts'
 import { ORGANISERS, badRequest, conflict, forbidden, notFound, requireFestival, requireUser, uuidParam, type FestivalRole, type Router } from '../http.ts'
-import { hashPassword, isWeakPassword, sha256 } from '../security.ts'
+import { hashPassword, sha256, weakPasswordReason } from '../security.ts'
 import { toFestival, toOwner, toTeamMember } from './mappers.ts'
 
 const TEAM_SELECT = `SELECT m.user_id, u.email, u.display_name, m.role, m.created_at
@@ -106,7 +106,8 @@ export function festivalRoutes(r: Router, deps: Deps): void {
     if (!existing.rows[0]) {
       const displayName = b.displayName?.trim()
       if (!displayName || !b.password) throw badRequest('Er is nog geen account met dit e-mailadres. Vul een naam en een tijdelijk wachtwoord in.')
-      if (b.password.length < 12 || isWeakPassword(b.password, email)) throw badRequest('Kies een sterker wachtwoord (minstens 12 tekens).')
+      const weak = weakPasswordReason(b.password, email)
+      if (weak) throw badRequest(weak)
       passwordHash = await hashPassword(b.password)
     }
 

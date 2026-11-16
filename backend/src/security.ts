@@ -25,11 +25,15 @@ const COMMON_PASSWORDS = new Set([
   '123456789012', 'wachtwoord123', 'password1234', 'welkom123456', 'qwertyuiopas', // gitleaks:allow (lijst zwakke wachtwoorden, geen geheim)
   'festival2026!', 'festival2027!', 'wachtwoord12', 'password12345', '000000000000',
 ])
-export function isWeakPassword(password: string, email: string): boolean {
+/** Waarom dit wachtwoord te zwak is, of null als het goed is. De tekst laten we zo aan de gebruiker zien. */
+export function weakPasswordReason(password: string, email: string): string | null {
   const lower = password.toLowerCase()
-  if (COMMON_PASSWORDS.has(lower)) return true
-  if (lower.includes(email.split('@')[0]?.toLowerCase() ?? '\u0000')) return true
-  return new Set(password).size < 5
+  if (password.length < 12) return 'Je wachtwoord moet minstens 12 tekens lang zijn.'
+  if (COMMON_PASSWORDS.has(lower)) return 'Dit wachtwoord wordt te vaak gebruikt. Kies een ander wachtwoord.'
+  const name = email.split('@')[0]?.toLowerCase()
+  if (name && lower.includes(name)) return 'Je wachtwoord lijkt te veel op het e-mailadres. Kies iets anders.'
+  if (new Set(password).size < 5) return 'Gebruik meer verschillende tekens in je wachtwoord.'
+  return null
 }
 
 export const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
