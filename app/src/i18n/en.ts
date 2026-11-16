@@ -72,6 +72,7 @@ export const en: Record<TranslationKey, string> = {
   'map.legend': 'Crowd',
   'map.lastKnown': 'Last known location',
   'map.lastKnownAt': 'Last known location · {time}',
+  'map.notLive': "Not live: friends' positions may be out of date. Reconnecting.",
   'map.offlineData': 'Map from {time}. Without internet you see the last known information.',
   'map.points': 'Map points',
   'point.wifi': 'Wi-Fi',

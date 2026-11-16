@@ -71,6 +71,7 @@ export const nl = {
   'map.legend': 'Drukte',
   'map.lastKnown': 'Laatst bekende locatie',
   'map.lastKnownAt': 'Laatst bekende locatie · {time}',
+  'map.notLive': 'Niet live: posities van vrienden kunnen oud zijn. We verbinden opnieuw.',
   'map.offlineData': 'Kaart van {time}. Zonder internet zie je de laatst bekende gegevens.',
   'map.points': 'Kaartpunten',
   'point.wifi': 'Wifi',

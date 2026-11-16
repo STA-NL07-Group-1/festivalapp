@@ -12,6 +12,9 @@ import { festivalKey, loadOffline, saveOffline } from '../lib/offlineStore'
 import { useAsync, useOfflineAsync } from '../lib/useAsync'
 import { useRealtime, useSession } from '../state/session'
 
+/** Zo lang mag de live-verbinding weg zijn voordat we het op de kaart laten zien */
+const NOT_LIVE_AFTER_MS = 8_000
+
 const CROWD_COLORS: Record<string, string> = {
   rustig: '#22c55e',
   gemiddeld: '#eab308',
@@ -82,7 +85,7 @@ function ClickToPlace({ active, onPlace }: { active: boolean; onPlace: (lat: num
 
 export function MapScreen() {
   const { t, locale } = useI18n()
-  const { me, updateMe, dark, online } = useSession()
+  const { me, updateMe, dark, online, live } = useSession()
   // Podia, kaartpunten, pins en vrienden worden op de telefoon bewaard voor als er geen internet is.
   // Drukte niet: een oude drukte-meting is eerder misleidend dan nuttig.
   // Elk festival heeft zijn eigen bewaarde gegevens. App.tsx bouwt dit scherm opnieuw op
@@ -100,17 +103,41 @@ export function MapScreen() {
   const reloadFriends = friends.reload
   const reloadPins = pins.reload
   const reloadCrowd = crowd.reload
-  const wasOnline = useRef(online)
-  useEffect(() => {
-    const cameBack = online && !wasOnline.current
-    wasOnline.current = online
-    if (!cameBack) return
+  const reloadAll = useCallback(() => {
     void reloadStages()
     void reloadPoints()
     void reloadFriends()
     void reloadPins()
     void reloadCrowd()
-  }, [online, reloadStages, reloadPoints, reloadFriends, reloadPins, reloadCrowd])
+  }, [reloadStages, reloadPoints, reloadFriends, reloadPins, reloadCrowd])
+  const wasOnline = useRef(online)
+  useEffect(() => {
+    const cameBack = online && !wasOnline.current
+    wasOnline.current = online
+    if (cameBack) reloadAll()
+  }, [online, reloadAll])
+
+  // Live-verbinding terug na een onderbreking (slaapstand, ander netwerk, nieuw token):
+  // wat er in de tussentijd veranderde kwam niet binnen, dus alles opnieuw ophalen.
+  // De eerste keer verbinden niet: dan worden de gegevens net al opgehaald.
+  const wasLive = useRef<boolean | null>(null)
+  useEffect(() => {
+    const reconnected = live && wasLive.current === false
+    if (live || wasLive.current !== null) wasLive.current = live
+    if (reconnected) reloadAll()
+  }, [live, reloadAll])
+
+  // Wel internet maar even geen live-verbinding? Na een paar seconden melden dat posities oud kunnen zijn.
+  // Niet meteen: bij een nieuw token (elk kwartier) is de verbinding binnen een seconde weer terug.
+  const [notLive, setNotLive] = useState(false)
+  useEffect(() => {
+    if (live || !online) return
+    const timer = setTimeout(() => setNotLive(true), NOT_LIVE_AFTER_MS)
+    return () => {
+      clearTimeout(timer)
+      setNotLive(false)
+    }
+  }, [live, online])
 
   const [myPosition, setMyPosition] = useState<GeolocationCoordinates | null>(null)
   const [lastPosition] = useState(() => loadOffline<LastPosition>('my-position'))
@@ -319,6 +346,7 @@ export function MapScreen() {
           <span className="dot" aria-hidden="true" /> {sharing ? t('map.sharing') : t('map.notSharing')}
         </button>
         {geoError && sharing && <p className="map-note">{t('map.geoDenied')}</p>}
+        {notLive && <p className="map-note" role="status">{t('map.notLive')}</p>}
         {!online && stages.savedAt && <p className="map-note">{t('map.offlineData', { time: formatTime(stages.savedAt, locale) })}</p>}
         {placing && !draft && <p className="map-note">{t('map.tapToPlace')}</p>}
       </div>
