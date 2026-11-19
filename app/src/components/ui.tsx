@@ -1,9 +1,9 @@
 // Kleine bouwstenen van het designsysteem.
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../i18n'
 import { initials } from '../lib/format'
-import { BackIcon } from './icons'
+import { BackIcon, CloseIcon } from './icons'
 
 export function Screen({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
@@ -77,8 +77,89 @@ function usePresence(open: boolean, exitMs: number) {
   return { present: open || present, closing: !open && present }
 }
 
+/** Afstand (px) of snelheid (px/ms) waarbij een veeg omlaag het venster sluit */
+const SWIPE_CLOSE_DISTANCE = 110
+const SWIPE_CLOSE_SPEED = 0.5
+
+/**
+ * Venster omlaag vegen om het te sluiten, zoals bij een app. Alleen als de inhoud bovenaan staat:
+ * anders scrol je gewoon door het venster. Touch-events (niet pointer-events), omdat we het scrollen
+ * van de browser moeten kunnen tegenhouden zodra iemand echt aan het vegen is.
+ */
+function useSwipeToClose(ref: RefObject<HTMLDivElement | null>, onClose: () => void, active: boolean) {
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  })
+  useEffect(() => {
+    const sheet = ref.current
+    if (!active || !sheet) return
+    let startX = 0
+    let startY = 0
+    let startTime = 0
+    let distance = 0
+    let tracking = false
+    let dragging = false
+
+    const onStart = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      if (e.touches.length !== 1 || !touch) return
+      tracking = sheet.scrollTop <= 0
+      dragging = false
+      distance = 0
+      startX = touch.clientX
+      startY = touch.clientY
+      startTime = performance.now()
+    }
+    const onMove = (e: TouchEvent) => {
+      const touch = e.touches[0]
+      if (!tracking || !touch) return
+      distance = touch.clientY - startY
+      if (!dragging) {
+        const sideways = Math.abs(touch.clientX - startX)
+        // Pas na 8 px weten we of het een veeg omlaag is; omhoog of opzij = gewoon scrollen of tikken
+        if (distance > 8 && distance > sideways) dragging = true
+        else if (distance < -8 || sideways > 8) tracking = false
+        if (!dragging) return
+      }
+      e.preventDefault()
+      sheet.style.transition = 'none'
+      sheet.style.transform = `translateY(${Math.max(0, distance)}px)`
+    }
+    const onEnd = () => {
+      const wasDragging = dragging
+      tracking = false
+      dragging = false
+      if (!wasDragging) return
+      const speed = distance / Math.max(1, performance.now() - startTime)
+      sheet.style.transition = ''
+      if (distance > SWIPE_CLOSE_DISTANCE || (speed > SWIPE_CLOSE_SPEED && distance > 30)) {
+        // De sluit-animatie gaat verder vanaf waar de vinger losliet, in plaats van terug te springen
+        sheet.style.setProperty('--sheet-shift', `${distance + 120}px`)
+        close.current()
+      } else {
+        sheet.style.transform = ''
+      }
+    }
+
+    sheet.addEventListener('touchstart', onStart, { passive: true })
+    sheet.addEventListener('touchmove', onMove, { passive: false })
+    sheet.addEventListener('touchend', onEnd)
+    sheet.addEventListener('touchcancel', onEnd)
+    return () => {
+      sheet.removeEventListener('touchstart', onStart)
+      sheet.removeEventListener('touchmove', onMove)
+      sheet.removeEventListener('touchend', onEnd)
+      sheet.removeEventListener('touchcancel', onEnd)
+    }
+  }, [ref, active])
+}
+
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+  const { t } = useI18n()
   const { present, closing } = usePresence(open, 180)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useSwipeToClose(sheetRef, onClose, present && !closing)
   // Inhoud van het laatste open moment bewaren, anders is het venster leeg tijdens de exit
   const [shown, setShown] = useState({ title, children })
   if (open && (shown.title !== title || shown.children !== children)) setShown({ title, children })
@@ -94,6 +175,7 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   return createPortal(
     <div className={`sheet-backdrop ${closing ? 'closing' : ''}`} onClick={onClose}>
       <div
+        ref={sheetRef}
         className="sheet"
         role="dialog"
         aria-modal="true"
@@ -102,7 +184,12 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sheet-handle" aria-hidden="true" />
-        <h2>{content.title}</h2>
+        <header className="sheet-header">
+          <h2>{content.title}</h2>
+          <button type="button" className="icon-button sheet-close" onClick={onClose} aria-label={t('common.close')}>
+            <CloseIcon />
+          </button>
+        </header>
         {content.children}
       </div>
     </div>,

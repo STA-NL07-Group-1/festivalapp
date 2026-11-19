@@ -63,6 +63,11 @@ export const PinIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M12 2v6M8 8h8l-1 5H9zM12 13v9" />
   </svg>
 )
+export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+)
 export const ChevronIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="m9 5 7 7-7 7" />

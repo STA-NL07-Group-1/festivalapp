@@ -310,6 +310,9 @@ select,
 textarea {
   width: 100%;
   min-height: 48px;
+  /* Minstens 16 px: anders zoomt een iPhone in zodra je in het veld tikt, en in een app op het
+     beginscherm zoomt hij daarna niet meer terug (dan valt de kaart, SOS en tabbalk buiten beeld) */
+  font-size: max(1rem, 16px);
   padding: 10px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--field-border);
@@ -1564,6 +1567,9 @@ textarea {
   display: grid;
   align-items: end;
   animation: fade-in var(--dur-sheet) var(--ease-out);
+  /* Zonder cursor: pointer stuurt Safari op een iPhone geen tik door naar dit vlak,
+     en dan sluit tikken naast het venster het niet */
+  cursor: pointer;
 }
 .sheet-backdrop.closing {
   animation: fade-out var(--dur-sheet-exit) var(--ease-out) forwards;
@@ -1581,12 +1587,25 @@ textarea {
   gap: 16px;
   width: min(560px, 100%);
   justify-self: center;
+  cursor: auto;
+  overscroll-behavior: contain;
+  transition: transform var(--dur-sheet-exit) var(--ease-out);
   animation: slide-up var(--dur-sheet) var(--ease-out);
 }
 .sheet-backdrop.closing .sheet {
   animation: slide-down var(--dur-sheet-exit) var(--ease-out) forwards;
 }
-.sheet > h2 {
+.sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sheet-close {
+  margin: -6px -10px 0 0;
+  color: var(--muted);
+}
+.sheet-header h2 {
   font-family: var(--display);
   font-size: 2rem;
   font-weight: 800;
