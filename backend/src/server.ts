@@ -5,6 +5,7 @@ import { createPool } from './db.ts'
 import { resolveSocket } from './festival.ts'
 import { createPush } from './push.ts'
 import { attachRealtime } from './realtime.ts'
+import { sendShowReminders } from './reminders.ts'
 
 const config = loadConfig()
 const db = createPool(config.databaseUrl)
@@ -25,6 +26,11 @@ const cleanup = setInterval(() => {
   db.query(`DELETE FROM email_tokens WHERE expires_at < now() - interval '1 day'`).catch((e) => console.error('[cleanup]', e))
 }, 60_000)
 
+// Herinneringen 15 minuten voor een optreden (timetable en aanmeldingen)
+const reminders = setInterval(() => {
+  sendShowReminders(db, push).catch((e) => console.error('[herinneringen]', e))
+}, 60_000)
+
 server.listen(config.port, () => {
   console.log(`Festivalapp-API draait op http://localhost:${config.port} (${config.env})`)
   if (!push.enabled) console.log('  Pushmeldingen staan uit: zet VAPID_PUBLIC_KEY en VAPID_PRIVATE_KEY in .env')
@@ -35,6 +41,7 @@ server.listen(config.port, () => {
 function shutdown() {
   console.log('Afsluiten…')
   clearInterval(cleanup)
+  clearInterval(reminders)
   deps.realtime.close()
   server.close(() => {
     void db.end().then(() => process.exit(0))

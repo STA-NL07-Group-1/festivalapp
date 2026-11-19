@@ -404,6 +404,7 @@ Table timetable_entries {
   user_id uuid [not null, ref: > users.id]
   performance_id uuid [not null, ref: > performances.id]
   created_at timestamptz [not null, default: `now()`]
+  reminded_at timestamptz [note: 'Herinnering 15 minuten van tevoren verstuurd (migratie 0009); terug naar NULL als de begintijd verandert']
   indexes {
     (user_id, performance_id) [pk]
   }
@@ -414,6 +415,7 @@ Table show_signups {
   performance_id uuid [not null, ref: > performances.id]
   created_at timestamptz [not null, default: `now()`]
   checked_in_at timestamptz
+  reminded_at timestamptz [note: 'Herinnering 15 minuten van tevoren verstuurd (migratie 0009)']
   indexes {
     (user_id, performance_id) [pk]
   }

@@ -164,6 +164,14 @@ export function socialRoutes(r: Router, deps: Deps): void {
 
     const me = await db.query('SELECT id, display_name FROM users WHERE id = $1', [user.id])
     deps.realtime.toUser(friend.id as string, 'friend.added', toFriend({ ...me.rows[0], since: friend.since }))
+    // Wie de code liet zien en de app niet meer open heeft, hoort het via een pushmelding
+    if (!deps.realtime.isOnline(friend.id as string)) {
+      void deps.push.toUsers(
+        [friend.id as string],
+        { title: 'Nieuwe vriend', body: `${String(me.rows[0]?.display_name)} is nu je vriend`, tag: `friend-${user.id}`, url: '/?tab=vrienden' },
+        'chat',
+      )
+    }
     return { status: 201, body: toFriend(friend) }
   })
 

@@ -73,7 +73,7 @@ backend/            Node.js 24 + TypeScript, REST + WebSockets (Bob)
 | Live kaart met vrienden en pins | `social.ts`, `MapScreen.tsx` (Leaflet + OpenStreetMap) |
 | Chat tussen vrienden | `social.ts`, `ChatScreen.tsx` |
 | Timetable met live updates | `program.ts`, `TimetableScreen.tsx` |
-| Pushmeldingen | `backend/src/push.ts`, `app/src/sw.ts`, `app/src/lib/push.ts` |
+| Pushmeldingen: chat, nieuwe vriend, mededelingen, timetable-wijzigingen, herinnering 15 min voor een act, SOS (personeel en bezoeker) | `backend/src/push.ts`, `reminders.ts`, `app/src/sw.ts`, `app/src/lib/push.ts` |
 | Noodberichten en SOS-knop | `organisation.ts`, `SosButton.tsx`, noodbanner in `App.tsx` |
 | Licht/donker, Nederlands/Engels | `MoreScreen.tsx`, `app/src/i18n/` |
 | Beheerportal | `portal/` |
@@ -94,7 +94,7 @@ backend/            Node.js 24 + TypeScript, REST + WebSockets (Bob)
 - Rate limiting op inloggen, registreren, mails, vriendcodes, SOS, chat en chatbot.
 - Locatie en timetable delen staan standaard uit; alleen de laatste locatie, max. 10 minuten.
 - Rollen worden in de backend afgedwongen; portal-acties komen in een append-only `audit_log`.
-- Pushmeldingen bevatten geen chatinhoud; de chatbot krijgt geen persoonsgegevens.
+- Pushmeldingen bevatten geen chatinhoud en geen SOS-bericht of -locatie (vergrendelscherm); de chatbot krijgt geen persoonsgegevens.
 
 ## Team
 

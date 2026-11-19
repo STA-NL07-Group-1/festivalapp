@@ -11,8 +11,9 @@ import { loadConfig } from '../src/config.ts'
 import { createPool } from '../src/db.ts'
 import { resolveSocket } from '../src/festival.ts'
 import type { Mail } from '../src/mail.ts'
-import { createPush, pushSubscriptionsFor, type PushKind } from '../src/push.ts'
+import { createPush, pushSubscriptionsFor, type Push, type PushKind, type PushMessage } from '../src/push.ts'
 import { attachRealtime } from '../src/realtime.ts'
+import { REMINDER_MINUTES, sendShowReminders } from '../src/reminders.ts'
 import { migrate } from '../scripts/migrate.ts'
 import { DEMO_PASSWORD, FIRST_FESTIVAL, SECOND_FESTIVAL, seed } from '../scripts/seed.ts'
 
@@ -23,6 +24,10 @@ let base = ''
 let close: () => Promise<void> = async () => {}
 // Mails gaan in tests niet naar Resend, maar naar deze lijst
 const mailbox: Mail[] = []
+// Alle pushmeldingen die de backend probeert te versturen (er zijn geen echte VAPID-sleutels in tests)
+const pushes: { userIds: string[]; message: PushMessage; kind?: PushKind }[] = []
+let testDb: ReturnType<typeof createPool>
+let testPush: Push
 
 /** De token uit de link in de laatste mail aan dit adres (?verify= of ?reset=) */
 function linkToken(to: string, param: 'verify' | 'reset'): string {
@@ -53,7 +58,14 @@ beforeAll(async () => {
   })
   const db = createPool(databaseUrl)
   const mailer = { enabled: true, send: async (mail: Mail) => void mailbox.push(mail) }
-  const { handler, deps } = createApp({ db, config, push: createPush(db, null), mailer })
+  testDb = db
+  testPush = {
+    ...createPush(db, null),
+    async toUsers(userIds, message, kind) {
+      pushes.push({ userIds, message, kind })
+    },
+  }
+  const { handler, deps } = createApp({ db, config, push: testPush, mailer })
   const server = createHttpServer(handler)
   deps.realtime = attachRealtime(server, {
     corsOrigins: config.corsOrigins,
@@ -103,6 +115,9 @@ const login = async (email: string, password = DEMO_PASSWORD) => {
   expect(res.status).toBe(200)
   return res.body as { accessToken: string; refreshToken: string }
 }
+
+/** Id van het account achter een token */
+const idOf = async (token: string) => (await api('GET', '/me', { token })).body.id as string
 
 let ticketCounter = 1
 async function register(name: string) {
@@ -546,6 +561,64 @@ describe.skipIf(!databaseUrl)('backend', () => {
       const done = await api('PATCH', `/admin/sos/${sos.body.id}`, { token: org.accessToken, body: { status: 'afgehandeld' } })
       expect(done.body.status).toBe('afgehandeld')
       expect(done.body.resolvedAt).not.toBeNull()
+    })
+
+    it('SOS geeft een urgente pushmelding aan het personeel en houdt de bezoeker op de hoogte', async () => {
+      const visitor = await login('bram@festival.test')
+      const org = await login('organisatie@festival.test')
+      const ehbo = await login('ehbo@festival.test')
+      const sos = await api('POST', '/sos', { token: visitor.accessToken, body: { message: 'Mijn vriend is onwel' } })
+      const [visitorId, orgId, ehboId] = await Promise.all([idOf(visitor.accessToken), idOf(org.accessToken), idOf(ehbo.accessToken)])
+      const toStaff = pushes.find((p) => p.message.tag === `sos-${sos.body.id}`)!
+      expect(toStaff.message.urgent).toBe(true)
+      expect(toStaff.userIds).toEqual(expect.arrayContaining([orgId, ehboId]))
+      expect(toStaff.userIds).not.toContain(visitorId)
+      // Geen gezondheidsinformatie op een vergrendelscherm
+      expect(toStaff.message.body).not.toContain('onwel')
+
+      const count = () => pushes.filter((p) => p.message.tag === `sos-${sos.body.id}` && p.userIds.includes(visitorId)).length
+      await api('PATCH', `/admin/sos/${sos.body.id}`, { token: org.accessToken, body: { status: 'in_behandeling' } })
+      expect(count()).toBe(1)
+      // Nog een keer dezelfde status: geen tweede melding
+      await api('PATCH', `/admin/sos/${sos.body.id}`, { token: org.accessToken, body: { status: 'in_behandeling' } })
+      expect(count()).toBe(1)
+      await api('PATCH', `/admin/sos/${sos.body.id}`, { token: org.accessToken, body: { status: 'afgehandeld' } })
+      expect(count()).toBe(2)
+    })
+
+    it('herinnering 15 minuten voor een act in je timetable, maar één keer', async () => {
+      const visitor = await login('anna@festival.test')
+      const visitorId = await idOf(visitor.accessToken)
+      const { rows } = await testDb.query<{ id: string }>(
+        `INSERT INTO performances (stage_id, artist, starts_at, ends_at)
+         SELECT id, 'Herinneringsband', now() + interval '10 minutes', now() + interval '70 minutes' FROM stages WHERE festival_id = $1 LIMIT 1
+         RETURNING id`,
+        [FIRST_FESTIVAL],
+      )
+      const performanceId = rows[0]!.id
+      await testDb.query('INSERT INTO timetable_entries (user_id, performance_id) VALUES ($1, $2)', [visitorId, performanceId])
+      const sent = () => pushes.filter((p) => p.message.tag === `reminder-${performanceId}`)
+
+      expect(await sendShowReminders(testDb, testPush)).toBeGreaterThanOrEqual(1)
+      expect(sent()).toHaveLength(1)
+      expect(sent()[0]!).toMatchObject({ kind: 'timetable', userIds: [visitorId] })
+      expect(sent()[0]!.message.body).toMatch(/^Begint over (9|10) minuten bij /)
+
+      await sendShowReminders(testDb, testPush)
+      expect(sent()).toHaveLength(1)
+
+      // Verplaatst naar later: de herinnering mag opnieuw, maar pas als de nieuwe tijd dichtbij is
+      const org = await login('organisatie@festival.test')
+      const later = new Date(Date.now() + (REMINDER_MINUTES + 30) * 60_000)
+      await api('PATCH', `/admin/performances/${performanceId}`, {
+        token: org.accessToken,
+        body: { startsAt: later.toISOString(), endsAt: new Date(later.getTime() + 3_600_000).toISOString() },
+      })
+      await sendShowReminders(testDb, testPush)
+      expect(sent()).toHaveLength(1)
+      await sendShowReminders(testDb, testPush, new Date(later.getTime() - 5 * 60_000))
+      expect(sent()).toHaveLength(2)
+      await testDb.query('DELETE FROM performances WHERE id = $1', [performanceId])
     })
 
     it('optreden wijzigen werkt; ongeldige tijden niet', async () => {
