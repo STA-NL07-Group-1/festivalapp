@@ -2,10 +2,16 @@
 import type { Deps } from '../app.ts'
 import { audit } from '../db.ts'
 import { ORGANISERS, STAFF, badRequest, notFound, requireFestival, requireUser, uuidParam, type Router } from '../http.ts'
-import { festivalUserIds } from '../festival.ts'
+import { festivalUserIds, staffUserIds } from '../festival.ts'
 import { sha256 } from '../security.ts'
 import { TICKET_SECONDS } from '../wsTickets.ts'
 import { PERFORMANCE_COLUMNS, toAnnouncement, toPerformance, toSos } from './mappers.ts'
+
+/** Pushmelding voor de bezoeker als het personeel een SOS-melding oppakt of afsluit */
+const SOS_UPDATES: Record<string, { title: string; body: string }> = {
+  in_behandeling: { title: 'Hulp is onderweg', body: 'Je SOS-melding is opgepakt. Blijf waar je bent als dat veilig is.' },
+  afgehandeld: { title: 'SOS-melding afgehandeld', body: 'Je melding is afgesloten. Heb je toch nog hulp nodig? Druk opnieuw op SOS.' },
+}
 
 export function organisationRoutes(r: Router, deps: Deps): void {
   const { db } = deps
@@ -101,6 +107,15 @@ export function organisationRoutes(r: Router, deps: Deps): void {
     await audit(db, user.id, 'sos.create', { type: 'sos_alert', id: String(alert.id) })
     // Naar al het personeel van dit festival: organisatie, EHBO en beveiliging
     deps.realtime.toStaff(festivalId, 'sos.update', alert)
+    // Ook een pushmelding, want het portal staat niet altijd open. Urgent: gaat altijd door, ook als iemand
+    // meldingen heeft uitgezet. Geen bericht of locatie in de melding: die kan op een vergrendelscherm staan.
+    void deps.push.toUsers(await staffUserIds(db, festivalId), {
+      title: '🚨 SOS-melding',
+      body: alert.latitude != null ? 'Iemand heeft hulp nodig. Open het portal voor de locatie.' : 'Iemand heeft hulp nodig (zonder locatie). Open het portal.',
+      tag: `sos-${alert.id}`,
+      url: '/beheer/',
+      urgent: true,
+    })
     return { status: 201, body: alert }
   })
 
@@ -119,18 +134,25 @@ export function organisationRoutes(r: Router, deps: Deps): void {
     const user = requireUser(ctx)
     const festivalId = requireFestival(ctx)
     const { status } = ctx.body as { status: string }
+    const sosId = uuidParam(ctx, 'sosId')
+    const before = await db.query<{ status: string }>('SELECT status FROM sos_alerts WHERE id = $1 AND festival_id = $2', [sosId, festivalId])
     const { rows } = await db.query(
       `UPDATE sos_alerts
           SET status = $2::sos_status, handled_by = $3,
               resolved_at = CASE WHEN $2::sos_status = 'afgehandeld' THEN coalesce(resolved_at, now()) ELSE NULL END
         WHERE id = $1 AND festival_id = $4 RETURNING *`,
-      [uuidParam(ctx, 'sosId'), status, user.id, festivalId],
+      [sosId, status, user.id, festivalId],
     )
     if (!rows[0]) throw notFound()
     const alert = toSos(rows[0])
     await audit(db, user.id, 'sos.update', { type: 'sos_alert', id: String(alert.id) }, { status })
     deps.realtime.toStaff(festivalId, 'sos.update', alert)
     if (alert.userId) deps.realtime.toUser(String(alert.userId), 'sos.update', alert)
+    // De bezoeker hoort dat er iets met de melding gebeurt. Alleen bij een echte verandering.
+    const update = SOS_UPDATES[status]
+    if (alert.userId && update && before.rows[0]?.status !== status) {
+      void deps.push.toUsers([String(alert.userId)], { ...update, tag: `sos-${alert.id}`, url: '/?tab=kaart', urgent: true })
+    }
     return { status: 200, body: alert }
   })
 
@@ -180,6 +202,11 @@ export function organisationRoutes(r: Router, deps: Deps): void {
     if (!rows[0]) throw notFound()
     const performance = toPerformance(rows[0])
     await audit(db, user.id, 'performance.update', { type: 'performance', id }, b)
+    // Nieuwe begintijd: de herinnering van 15 minuten van tevoren moet opnieuw kunnen gaan
+    if (b.startsAt) {
+      await db.query('UPDATE timetable_entries SET reminded_at = NULL WHERE performance_id = $1', [id])
+      await db.query('UPDATE show_signups SET reminded_at = NULL WHERE performance_id = $1', [id])
+    }
     deps.realtime.toFestival(festivalId, 'timetable.update', performance)
 
     // Iedereen die dit optreden in zijn timetable heeft, krijgt een melding

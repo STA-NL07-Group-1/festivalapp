@@ -100,6 +100,17 @@ export async function festivalUserIds(db: Queryable, festivalId: string): Promis
   return rows.map((r) => r.user_id)
 }
 
+/** Personeel van een festival (beheerder, organisatie, EHBO, beveiliging) plus eigenaren en sudo. Voor SOS-meldingen. */
+export async function staffUserIds(db: Queryable, festivalId: string): Promise<string[]> {
+  const { rows } = await db.query<{ user_id: string }>(
+    `SELECT user_id FROM festival_members WHERE festival_id = $1
+     UNION
+     SELECT id FROM users WHERE platform_role IS NOT NULL`,
+    [festivalId],
+  )
+  return rows.map((r) => r.user_id)
+}
+
 /** Wie mag welke rol uitdelen? Beheerder: alleen sudo. Organisatie: beheerders. EHBO en beveiliging: ook de organisatie. */
 export function canAssign(actor: { role: Role; platformRole: PlatformRole | null }, target: FestivalRole): boolean {
   if (target === 'beheerder') return actor.platformRole === 'sudo'
