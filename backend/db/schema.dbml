@@ -346,11 +346,11 @@ Table photos {
   group_id uuid [ref: > groups.id, note: 'Album van een groep']
   user_a uuid [ref: > users.id, note: 'Album van twee mensen samen (user_a < user_b)']
   user_b uuid [ref: > users.id]
-  content_type text [not null, note: 'jpeg, png, gif, webp, avif, heic, heif, bmp of tiff; geen svg']
+  content_type text [not null, note: 'Foto (jpeg, png, gif, webp, avif, heic, heif, bmp, tiff; geen svg) of video (mp4, quicktime, webm; migratie 0011)']
   data bytea [not null, note: 'max. 25 MB']
   caption text [note: 'max. 1000 tekens']
   created_at timestamptz [not null, default: `clock_timestamp()`]
-  Note: '''Gedeelde foto's (migratie 0008). Precies één van group_id en het paar user_a/user_b is gevuld.'''
+  Note: '''Gedeelde foto's en video's (migratie 0008, video sinds 0011). Precies één van group_id en het paar user_a/user_b is gevuld.'''
 }
 
 Table groups {

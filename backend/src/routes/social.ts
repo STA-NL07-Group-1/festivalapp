@@ -3,6 +3,7 @@ import type { Deps } from '../app.ts'
 import { areFriends, audit, friendIds, transaction } from '../db.ts'
 import { badRequest, forbidden, notFound, requireFestival, requireUser, uuidParam, type Router } from '../http.ts'
 import { newFriendCode, normalizeCode, sha256 } from '../security.ts'
+import { MESSAGE_SELECT, saveMessage } from '../messages.ts'
 import { toFriend, toFriendLocation, toMe, toMessage, toPin } from './mappers.ts'
 
 const FRIEND_CODE_MINUTES = 10
@@ -265,10 +266,10 @@ export function socialRoutes(r: Router, deps: Deps): void {
     if (before && Number.isNaN(Date.parse(before))) throw badRequest('Het veld "before" is ongeldig.')
 
     const { rows } = await db.query(
-      `SELECT * FROM messages
-        WHERE ((sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1))
-          AND ($3::timestamptz IS NULL OR created_at < $3)
-        ORDER BY created_at DESC
+      `${MESSAGE_SELECT}
+        WHERE ((m.sender_id = $1 AND m.recipient_id = $2) OR (m.sender_id = $2 AND m.recipient_id = $1))
+          AND ($3::timestamptz IS NULL OR m.created_at < $3)
+        ORDER BY m.created_at DESC
         LIMIT $4`,
       [user.id, other, before, limit],
     )
@@ -283,21 +284,11 @@ export function socialRoutes(r: Router, deps: Deps): void {
     const user = requireUser(ctx)
     const other = uuidParam(ctx, 'userId')
     if (!(await areFriends(db, user.id, other))) throw notFound()
-    const { body, clientId } = ctx.body as { body: string; clientId?: string }
-    if (!body.trim()) throw badRequest('Het veld "body" is te kort.')
-    const { rows } = await db.query(
-      `INSERT INTO messages (sender_id, recipient_id, body, client_id) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (sender_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
-       RETURNING *`,
-      [user.id, other, body.trim(), clientId ?? null],
-    )
-    if (!rows[0]) {
-      // Dit bericht kwam al eerder binnen (opnieuw verstuurd bij slecht bereik): het bestaande teruggeven,
-      // zonder het nog een keer naar de vriend te sturen of een pushmelding te geven
-      const existing = await db.query('SELECT * FROM messages WHERE sender_id = $1 AND client_id = $2', [user.id, clientId])
-      return { status: 200, body: toMessage(existing.rows[0]!) }
-    }
-    const message = toMessage(rows[0])
+    const { body, photoId, clientId } = ctx.body as { body?: string; photoId?: string; clientId?: string }
+    const { message, created } = await saveMessage(db, { senderId: user.id, conversation: { recipientId: other }, body, photoId, clientId })
+    // Dit bericht kwam al eerder binnen (opnieuw verstuurd bij slecht bereik): het bestaande teruggeven,
+    // zonder het nog een keer naar de vriend te sturen of een pushmelding te geven
+    if (!created) return { status: 200, body: message }
     deps.realtime.toUsers([other, user.id], 'chat.message', message)
     if (!deps.realtime.isOnline(other)) {
       const sender = await db.query<{ display_name: string }>('SELECT display_name FROM users WHERE id = $1', [user.id])
@@ -306,7 +297,7 @@ export function socialRoutes(r: Router, deps: Deps): void {
         {
           title: sender.rows[0]?.display_name ?? 'Nieuw bericht',
           // Geen berichtinhoud in de melding: die kan op het vergrendelscherm staan
-          body: 'Stuurde je een bericht',
+          body: photoId ? 'Stuurde je een foto of video' : 'Stuurde je een bericht',
           tag: `chat-${user.id}`,
           url: `/?chat=${user.id}`,
         },

@@ -1,13 +1,15 @@
 import QRCode from 'qrcode'
 import { useCallback, useState, type FormEvent } from 'react'
-import { api, ApiError, type Friend, type FriendCode, type FriendLocation } from '../api/client'
-import { ChevronIcon, UsersIcon } from '../components/icons'
+import { api, ApiError, type Friend, type FriendCode, type FriendLocation, type Group } from '../api/client'
+import { ChevronIcon, GroupIcon, PlusIcon, UsersIcon } from '../components/icons'
+import { SharedMedia } from '../components/SharedMedia'
 import { QrScanner } from '../components/QrScanner'
 import { Avatar, Empty, Screen, Sheet, Skeleton, Toast } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatRelative, formatTime } from '../lib/format'
 import { useAsync, useOfflineAsync } from '../lib/useAsync'
-import { useRealtime } from '../state/session'
+import { useRealtime, useSession } from '../state/session'
+import { NewGroupSheet } from './GroupScreens'
 
 /** Haal de code uit een gescande QR (URL met ?vriend=…) of getypte tekst. */
 // eslint-disable-next-line react-refresh/only-export-components
@@ -26,16 +28,23 @@ export function extractFriendCode(text: string): string | null {
 export function FriendsScreen({
   initialCode,
   onOpenChat,
+  onOpenGroup,
   onOpenTimetable,
 }: {
   initialCode: string | null
   onOpenChat: (friend: Friend) => void
+  onOpenGroup: (group: Group) => void
   onOpenTimetable: (friendId: string) => void
 }) {
   const { t, locale } = useI18n()
+  const { me } = useSession()
   // Ook zonder bereik je vriendenlijst zien (om te chatten: berichten gaan dan in de wachtrij)
   const friends = useOfflineAsync('friends', () => api.get<Friend[]>('/friends'))
   const locations = useAsync(() => api.get<FriendLocation[]>('/friends/locations'))
+  const groups = useOfflineAsync('groups', () => api.get<Group[]>('/groups'))
+  // + knop: kiezen tussen vriend toevoegen en een groep maken
+  const [menu, setMenu] = useState(false)
+  const [newGroup, setNewGroup] = useState(false)
   const [adding, setAdding] = useState(initialCode !== null)
   const [codeVersion, setCodeVersion] = useState(0)
   const [codeInput, setCodeInput] = useState(initialCode ?? '')
@@ -47,6 +56,12 @@ export function FriendsScreen({
   const reloadFriends = friends.reload
   useRealtime('friend.added', useCallback(() => void reloadFriends(), [reloadFriends]))
   useRealtime('friend.removed', useCallback(() => void reloadFriends(), [reloadFriends]))
+  // Nieuwe groep, ander lid, nieuw bericht of je bent eruit: de lijst met groepen bijwerken
+  const reloadGroups = groups.reload
+  const refreshGroups = useCallback(() => void reloadGroups(), [reloadGroups])
+  useRealtime('group.updated', refreshGroups)
+  useRealtime('group.removed', refreshGroups)
+  useRealtime('group.message', refreshGroups)
 
   // Een nieuwe code zodra het venster opengaat (of bij "Nieuwe code")
   const myCode = useAsync(async () => {
@@ -87,11 +102,38 @@ export function FriendsScreen({
     <Screen
       title={t('friends.title')}
       actions={
-        <button type="button" className="button primary small" onClick={() => setAdding(true)}>
-          + {t('friends.add')}
+        <button type="button" className="icon-button primary" onClick={() => setMenu(true)} aria-label={t('friends.newMenu')}>
+          <PlusIcon />
         </button>
       }
     >
+      {groups.data && groups.data.length > 0 && (
+        <>
+          <h2 className="list-title">{t('group.title')}</h2>
+          <ul className="list stagger">
+            {groups.data.map((g) => (
+              <li key={g.id}>
+                <button type="button" className="row" onClick={() => onOpenGroup(g)}>
+                  <span className="avatar group-avatar" aria-hidden="true">
+                    <GroupIcon />
+                  </span>
+                  <span className="grow">
+                    <strong>{g.name}</strong>
+                    <span className="muted small">{t('group.members', { count: g.memberCount })}</span>
+                  </span>
+                  {g.unread > 0 && (
+                    <span className="tab-badge inline" aria-label={t('group.unread', { count: g.unread })}>
+                      {g.unread}
+                    </span>
+                  )}
+                  <ChevronIcon />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <h2 className="list-title">{t('friends.title')}</h2>
+        </>
+      )}
       {friends.loading && <Skeleton rows={3} />}
       {friends.data?.length === 0 && (
         <Empty
@@ -135,12 +177,49 @@ export function FriendsScreen({
             <button type="button" className="button" onClick={() => onOpenTimetable(selected.id)}>
               {t('friends.timetable')}
             </button>
+            <SharedMedia target={{ friendId: selected.id }} names={(id) => (id === me?.id ? t('chat.you') : selected.displayName)} />
             <button type="button" className="button danger-outline" onClick={() => void remove(selected)}>
               {t('friends.remove')}
             </button>
           </div>
         )}
       </Sheet>
+
+      <Sheet open={menu} onClose={() => setMenu(false)} title={t('friends.newMenu')}>
+        <div className="stack">
+          <button
+            type="button"
+            className="button primary"
+            onClick={() => {
+              setMenu(false)
+              setAdding(true)
+            }}
+          >
+            <UsersIcon /> {t('friends.add')}
+          </button>
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              setMenu(false)
+              setNewGroup(true)
+            }}
+          >
+            <GroupIcon /> {t('group.new')}
+          </button>
+        </div>
+      </Sheet>
+
+      <NewGroupSheet
+        open={newGroup}
+        onClose={() => setNewGroup(false)}
+        friends={friends.data ?? []}
+        onCreated={(group) => {
+          setNewGroup(false)
+          void groups.reload()
+          onOpenGroup({ id: group.id, name: group.name, description: group.description, myRole: group.myRole, memberCount: group.members.length, unread: 0, lastMessageAt: null, createdAt: group.createdAt })
+        }}
+      />
 
       <Sheet
         open={adding}

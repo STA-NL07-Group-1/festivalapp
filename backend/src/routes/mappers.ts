@@ -75,11 +75,17 @@ export const toPin = (r: Row) => ({
   createdAt: iso(r.created_at),
 })
 
+/** Bericht. `media_type` komt uit een join met photos (zie MESSAGE_SELECT in messages.ts). */
 export const toMessage = (r: Row) => ({
   id: r.id,
   senderId: r.sender_id,
-  recipientId: r.recipient_id,
-  body: r.body,
+  recipientId: r.recipient_id ?? null,
+  groupId: r.group_id ?? null,
+  kind: r.kind ?? 'tekst',
+  body: r.body ?? null,
+  photoId: r.photo_id ?? null,
+  mediaType: r.media_type ?? null,
+  systemEvent: r.system_event ?? null,
   createdAt: iso(r.created_at),
   readAt: iso(r.read_at),
   clientId: r.client_id ?? null,

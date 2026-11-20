@@ -7,11 +7,15 @@ import { useSyncExternalStore } from 'react'
 import { api, ApiError, currentFestival, type Message, type Pin } from '../api/client'
 import { loadOffline, saveOffline } from './offlineStore'
 
-/** Chatbericht. Oude items van vóór de pins hebben nog geen `kind`: dat zijn ook berichten. */
+/**
+ * Chatbericht aan een vriend (`friendId`) of in een groep (`groupId`, dan is `friendId` leeg).
+ * Oude items van vóór de pins hebben nog geen `kind`: dat zijn ook berichten.
+ */
 export interface MessageItem {
   kind?: 'bericht'
   clientId: string
   friendId: string
+  groupId?: string
   body: string
   createdAt: string
 }
@@ -73,6 +77,12 @@ export function enqueue(friendId: string, body: string): MessageItem {
   return item
 }
 
+export function enqueueGroup(groupId: string, body: string): MessageItem {
+  const item: MessageItem = { kind: 'bericht', clientId: crypto.randomUUID(), friendId: '', groupId, body, createdAt: new Date().toISOString() }
+  write([...read(), item])
+  return item
+}
+
 export function enqueuePin(pin: Pick<PinItem, 'label' | 'latitude' | 'longitude' | 'visibility'>): PinItem {
   const item: PinItem = { kind: 'pin', clientId: crypto.randomUUID(), festivalId: currentFestival(), ...pin, createdAt: new Date().toISOString() }
   write([...read(), item])
@@ -101,7 +111,8 @@ async function send<T>(item: OutboxItem, post: () => Promise<T>): Promise<T> {
 }
 
 export function deliver(item: MessageItem): Promise<Message> {
-  return send(item, () => api.post<Message>(`/messages/${item.friendId}`, { body: item.body, clientId: item.clientId }))
+  const path = item.groupId ? `/groups/${item.groupId}/messages` : `/messages/${item.friendId}`
+  return send(item, () => api.post<Message>(path, { body: item.body, clientId: item.clientId }))
 }
 
 export function deliverPin(item: PinItem): Promise<Pin> {

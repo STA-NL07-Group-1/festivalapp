@@ -1,11 +1,36 @@
-// Foto's delen: in het album van een groep of van twee vrienden. De foto's staan als bytea in de database
-// (migratie 0008). Alleen leden van de groep, of de twee vrienden zelf, zien een foto.
+// Foto's en video's delen: in het album van een groep of van twee vrienden. Ze staan als bytea in de database
+// (migratie 0008, video sinds 0011). Alleen leden van de groep, of de twee vrienden zelf, zien ze.
+// Een chatbericht met een foto of video verwijst hiernaar (messages.photo_id).
 import type { Deps } from '../app.ts'
 import { areFriends } from '../db.ts'
 import { badRequest, forbidden, notFound, requireUser, uuidParam, type Router } from '../http.ts'
 import { imageType } from './content.ts'
 
-export const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+/** 25 MB per bestand: de grens uit de database (photos_size in 0008) */
+export const MAX_PHOTO_BYTES = 25 * 1024 * 1024
+/** Base64 is een derde groter, plus een beetje JSON eromheen */
+const MAX_UPLOAD_BODY = Math.ceil((MAX_PHOTO_BYTES * 4) / 3) + 10_000
+
+type MediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'video/mp4' | 'video/quicktime' | 'video/webm'
+
+/**
+ * Herkent het bestand aan de eerste bytes, niet aan wat de app opgeeft. Foto: png, jpeg, webp.
+ * Video: mp4 en mov (iPhone) herken je aan "ftyp" op plek 4, webm aan de EBML-kop.
+ * HEIC-foto's hebben ook "ftyp", maar die weigeren we: de meeste browsers kunnen ze niet tonen
+ * (een iPhone zet een foto bij het uploaden zelf om naar jpeg).
+ */
+export function mediaType(data: Buffer): MediaType | null {
+  const image = imageType(data)
+  if (image) return image
+  if (data.length >= 4 && data[0] === 0x1a && data[1] === 0x45 && data[2] === 0xdf && data[3] === 0xa3) return 'video/webm'
+  if (data.length >= 12 && data.toString('ascii', 4, 8) === 'ftyp') {
+    const brand = data.toString('ascii', 8, 12)
+    if (brand === 'qt  ') return 'video/quicktime'
+    if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'avif'].includes(brand)) return null
+    return 'video/mp4'
+  }
+  return null
+}
 
 type PhotoRow = {
   id: string
@@ -75,15 +100,15 @@ export function photoRoutes(r: Router, deps: Deps): void {
     return areFriends(db, row.user_a!, row.user_b!)
   }
 
-  r.post('/photos', { operationId: 'uploadPhoto', maxBodyBytes: 7_200_000, rateLimit: { limit: 20, windowMs: 60_000 } }, async (ctx) => {
+  r.post('/photos', { operationId: 'uploadPhoto', maxBodyBytes: MAX_UPLOAD_BODY, rateLimit: { limit: 20, windowMs: 60_000 } }, async (ctx) => {
     const user = requireUser(ctx)
     const b = ctx.body as { image: string; caption?: string; friendId?: string; groupId?: string }
     if ((b.friendId === undefined) === (b.groupId === undefined)) throw badRequest('Geef precies één van "friendId" of "groupId" op.')
 
     const raw = Buffer.from(b.image, 'base64')
-    if (raw.length === 0 || raw.length > MAX_PHOTO_BYTES) throw badRequest('De foto mag maximaal 5 MB zijn.')
-    const type = imageType(raw)
-    if (!type) throw badRequest('Alleen png, jpeg of webp.')
+    if (raw.length === 0 || raw.length > MAX_PHOTO_BYTES) throw badRequest('Het bestand mag maximaal 25 MB zijn.')
+    const type = mediaType(raw)
+    if (!type) throw badRequest('Alleen een foto (png, jpeg of webp) of een video (mp4, mov of webm).')
     const data = type === 'image/jpeg' ? stripJpegMetadata(raw) : raw
     const caption = b.caption?.trim() || null
 

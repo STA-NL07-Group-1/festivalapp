@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError, setFestival } from '../api/client'
-import { deliver, deliverPin, enqueue, enqueuePin, flushOutbox, removeFromOutbox } from './outbox'
+import { deliver, deliverPin, enqueue, enqueueGroup, enqueuePin, flushOutbox, removeFromOutbox } from './outbox'
 import { loadOffline, saveOffline } from './offlineStore'
 
 vi.mock('../api/client', async (importOriginal) => {
@@ -14,6 +14,11 @@ const message = (body: string, clientId: string) => ({
   id: 'm1',
   senderId: 'ik',
   recipientId: 'vriend',
+  groupId: null,
+  kind: 'tekst' as const,
+  photoId: null,
+  mediaType: null,
+  systemEvent: null,
   body,
   createdAt: new Date().toISOString(),
   clientId,
@@ -30,6 +35,14 @@ describe('wachtrij voor chatberichten', () => {
     post.mockResolvedValueOnce(message('Waar sta je?', item.clientId))
     await deliver(item)
     expect(post).toHaveBeenCalledWith('/messages/vriend', { body: 'Waar sta je?', clientId: item.clientId })
+    expect(stored()).toHaveLength(0)
+  })
+
+  it('een bericht in een groep gaat naar de groep', async () => {
+    const item = enqueueGroup('groep-1', 'Wie wil er iets drinken?')
+    post.mockResolvedValueOnce(message('Wie wil er iets drinken?', item.clientId))
+    await deliver(item)
+    expect(post).toHaveBeenCalledWith('/groups/groep-1/messages', { body: 'Wie wil er iets drinken?', clientId: item.clientId })
     expect(stored()).toHaveLength(0)
   })
 

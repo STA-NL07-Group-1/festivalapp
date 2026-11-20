@@ -73,3 +73,27 @@ export const ChevronIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="m9 5 7 7-7 7" />
   </svg>
 )
+export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+)
+export const ImageIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <circle cx="9" cy="10" r="2" />
+    <path d="m21 16-5-5-9 9" />
+  </svg>
+)
+export const PlayIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M8 5.5v13l11-6.5z" fill="currentColor" />
+  </svg>
+)
+export const GroupIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <circle cx="8" cy="9" r="3" />
+    <circle cx="16" cy="9" r="3" />
+    <path d="M2 20c0-3.3 2.7-5 6-5s6 1.7 6 5M14 15.2c.6-.1 1.3-.2 2-.2 3.3 0 6 1.7 6 5" />
+  </svg>
+)

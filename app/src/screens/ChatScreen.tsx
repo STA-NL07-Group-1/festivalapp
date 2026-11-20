@@ -1,38 +1,77 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { api, ApiError, type Friend, type Message } from '../api/client'
-import { BackIcon, SendIcon } from '../components/icons'
+import { api, ApiError, type GroupDetail, type Message } from '../api/client'
+import { BackIcon, GroupIcon, SendIcon } from '../components/icons'
+import { MediaComposer, MediaThumb, MediaViewer, type MediaItem } from '../components/media'
 import { Avatar, Empty, ErrorNote, Skeleton } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatTime } from '../lib/format'
-import { deliver, enqueue, flushOutbox, isMessageItem, removeFromOutbox, useOutbox, type MessageItem } from '../lib/outbox'
+import type { Conversation } from '../lib/conversation'
+import { forgetMedia, isVideo } from '../lib/media'
+import { systemText } from '../lib/systemText'
+import { deliver, enqueue, enqueueGroup, flushOutbox, isMessageItem, removeFromOutbox, useOutbox, type MessageItem } from '../lib/outbox'
 import { useAsync } from '../lib/useAsync'
 import { useRealtime, useSession } from '../state/session'
+import { FriendInfoSheet } from './FriendInfo'
+import { GroupInfoSheet } from './GroupScreens'
 
-export function ChatScreen({ friend, onBack }: { friend: Friend; onBack: () => void }) {
+export function ChatScreen({ conversation, onBack }: { conversation: Conversation; onBack: () => void }) {
   const { t, locale } = useI18n()
   const { me, online } = useSession()
-  const messages = useAsync(() => api.get<Message[]>(`/messages/${friend.id}?limit=100`), [friend.id])
+  const isGroup = conversation.type === 'group'
+  const id = isGroup ? conversation.group.id : conversation.friend.id
+  const basePath = isGroup ? `/groups/${id}/messages` : `/messages/${id}`
+  const messages = useAsync(() => api.get<Message[]>(`${basePath}?limit=100`), [basePath])
+  // Leden van de groep (voor namen bij berichten en de groepsinfo)
+  const group = useAsync(() => (isGroup ? api.get<GroupDetail>(`/groups/${id}`) : Promise.resolve(null)), [isGroup, id])
   const [text, setText] = useState('')
   // Berichten in de wachtrij (lib/outbox.ts): staan meteen op het scherm, ook na het sluiten van de app
   const outbox = useOutbox()
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set())
   const [rejected, setRejected] = useState(false)
+  const [infoOpen, setInfoOpen] = useState(false)
+  const [viewing, setViewing] = useState<MediaItem | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
 
+  const title = isGroup ? (group.data?.name ?? conversation.group.name) : conversation.friend.displayName
+  const nameOf = (userId: string) =>
+    userId === me?.id
+      ? t('chat.you')
+      : isGroup
+        ? (group.data?.members.find((m) => m.id === userId)?.displayName ?? t('chat.formerMember'))
+        : conversation.friend.displayName
+
   const setMessages = messages.setData
-  useRealtime<Message>(
-    'chat.message',
-    useCallback(
-      (m) => {
-        const inConversation =
-          (m.senderId === friend.id && m.recipientId === me?.id) || (m.senderId === me?.id && m.recipientId === friend.id)
-        if (!inConversation) return
-        setMessages((list) => (list?.some((x) => x.id === m.id) ? list : [m, ...(list ?? [])]))
-        // Eigen bericht via de WebSocket eerder binnen dan het antwoord op de POST: uit de wachtrij halen
-        if (m.senderId === me?.id && m.clientId) removeFromOutbox(m.clientId)
-      },
-      [friend.id, me?.id, setMessages],
-    ),
+  const addMessage = useCallback(
+    (m: Message) => setMessages((list) => (list?.some((x) => x.id === m.id) ? list : [m, ...(list ?? [])])),
+    [setMessages],
+  )
+  const belongsHere = useCallback(
+    (m: Message) =>
+      isGroup
+        ? m.groupId === id
+        : (m.senderId === id && m.recipientId === me?.id) || (m.senderId === me?.id && m.recipientId === id),
+    [isGroup, id, me?.id],
+  )
+  const onMessage = useCallback(
+    (m: Message) => {
+      if (!belongsHere(m)) return
+      addMessage(m)
+      // Eigen bericht via de WebSocket eerder binnen dan het antwoord op de POST: uit de wachtrij halen
+      if (m.senderId === me?.id && m.clientId) removeFromOutbox(m.clientId)
+    },
+    [belongsHere, addMessage, me?.id],
+  )
+  useRealtime<Message>(isGroup ? 'group.message' : 'chat.message', onMessage)
+
+  // Groep veranderd (naam, leden) of jij bent eruit
+  const reloadGroup = group.reload
+  useRealtime<{ groupId: string }>(
+    'group.updated',
+    useCallback(({ groupId }) => groupId === id && void reloadGroup(), [id, reloadGroup]),
+  )
+  useRealtime<{ groupId: string }>(
+    'group.removed',
+    useCallback(({ groupId }) => groupId === id && onBack(), [id, onBack]),
   )
 
   // Weer bereik (of de chat net geopend): wat nog in de wachtrij staat alsnog versturen
@@ -45,19 +84,20 @@ export function ChatScreen({ friend, onBack }: { friend: Friend; onBack: () => v
   const ordered = useMemo(() => [...(messages.data ?? [])].reverse(), [messages.data])
   const pending = useMemo(() => {
     const sent = new Set(ordered.map((m) => m.clientId).filter(Boolean))
-    return outbox.filter(isMessageItem).filter((item) => item.friendId === friend.id && !sent.has(item.clientId))
-  }, [outbox, ordered, friend.id])
+    return outbox
+      .filter(isMessageItem)
+      .filter((item) => (isGroup ? item.groupId === id : !item.groupId && item.friendId === id) && !sent.has(item.clientId))
+  }, [outbox, ordered, isGroup, id])
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' })
   }, [messages.data, pending.length])
 
   async function send(item: MessageItem) {
-    setFailed((set) => new Set([...set].filter((id) => id !== item.clientId)))
+    setFailed((set) => new Set([...set].filter((x) => x !== item.clientId)))
     setRejected(false)
     try {
-      const message = await deliver(item)
-      setMessages((list) => (list?.some((x) => x.id === message.id) ? list : [message, ...(list ?? [])]))
+      addMessage(await deliver(item))
     } catch (error) {
       // 400/404: de server weigert het voorgoed (het staat dan ook niet meer in de wachtrij)
       if (error instanceof ApiError && (error.status === 400 || error.status === 404)) setRejected(true)
@@ -71,7 +111,20 @@ export function ChatScreen({ friend, onBack }: { friend: Friend; onBack: () => v
     const body = text.trim()
     if (!body) return
     setText('')
-    void send(enqueue(friend.id, body))
+    void send(isGroup ? enqueueGroup(id, body) : enqueue(id, body))
+  }
+
+  // Foto of video: eerst geüpload door MediaComposer, dan het bericht met photoId
+  async function sendMedia(photoId: string, caption: string) {
+    const message = await api.post<Message>(basePath, { photoId, ...(caption ? { body: caption } : {}), clientId: crypto.randomUUID() })
+    addMessage(message)
+  }
+
+  async function deleteMedia(item: MediaItem) {
+    await api.delete(`/photos/${item.photoId}`)
+    forgetMedia(item.photoId)
+    // Het bericht blijft staan, zonder foto (zoals op de server)
+    setMessages((list) => list?.map((m) => (m.photoId === item.photoId ? { ...m, photoId: null, mediaType: null } : m)))
   }
 
   const status = (item: MessageItem) => {
@@ -86,24 +139,60 @@ export function ChatScreen({ friend, onBack }: { friend: Friend; onBack: () => v
   }
 
   return (
-    <section className="chat" aria-label={`${t('friends.chat')} ${friend.displayName}`}>
+    <section className="chat" aria-label={`${t('friends.chat')} ${title}`}>
       <header className="chat-header">
         <button type="button" className="icon-button" onClick={onBack} aria-label={t('common.back')}>
           <BackIcon />
         </button>
-        <Avatar name={friend.displayName} size={36} />
-        <h1>{friend.displayName}</h1>
+        {/* Tik op de naam: profiel met gedeelde media, of de groepsinfo met leden */}
+        <button type="button" className="chat-title" onClick={() => setInfoOpen(true)} aria-label={isGroup ? t('group.info') : t('chat.profile')}>
+          {isGroup ? (
+            <span className="avatar group-avatar" aria-hidden="true">
+              <GroupIcon />
+            </span>
+          ) : (
+            <Avatar name={title} size={36} />
+          )}
+          <span className="chat-title-text">
+            <h1>{title}</h1>
+            {isGroup && group.data && <small className="muted">{t('group.members', { count: group.data.members.length })}</small>}
+          </span>
+        </button>
       </header>
       <div className="chat-messages" aria-live="polite">
         {messages.loading && <Skeleton variant="bubble" rows={4} />}
         {!messages.loading && ordered.length === 0 && pending.length === 0 && <Empty icon={<SendIcon />}>{t('chat.empty')}</Empty>}
-        {ordered.map((m) => (
-          <div key={m.id} className={`bubble ${m.senderId === me?.id ? 'mine' : 'theirs'}`}>
-            {/* Platte tekst: React escapet dit, er wordt nooit HTML uitgevoerd */}
-            <p>{m.body}</p>
-            <time dateTime={m.createdAt}>{formatTime(m.createdAt, locale)}</time>
-          </div>
-        ))}
+        {ordered.map((m) => {
+          if (m.kind === 'systeem' && m.systemEvent) {
+            return (
+              <p key={m.id} className="chat-system">
+                {systemText(m.systemEvent, me?.id ?? null, t)}
+              </p>
+            )
+          }
+          const mine = m.senderId === me?.id
+          return (
+            <div key={m.id} className={`bubble ${mine ? 'mine' : 'theirs'} ${m.kind === 'foto' ? 'media' : ''}`}>
+              {isGroup && !mine && <span className="bubble-sender">{nameOf(m.senderId)}</span>}
+              {m.kind === 'foto' &&
+                (m.photoId ? (
+                  <MediaThumb
+                    photoId={m.photoId}
+                    mediaType={m.mediaType}
+                    label={isVideo(m.mediaType) ? t('media.openVideo') : t('media.openPhoto')}
+                    onOpen={() =>
+                      setViewing({ photoId: m.photoId!, mediaType: m.mediaType, caption: m.body, by: nameOf(m.senderId), createdAt: m.createdAt, mine })
+                    }
+                  />
+                ) : (
+                  <p className="muted small">{t('media.removed')}</p>
+                ))}
+              {/* Platte tekst: React escapet dit, er wordt nooit HTML uitgevoerd */}
+              {m.body && <p>{m.body}</p>}
+              <time dateTime={m.createdAt}>{formatTime(m.createdAt, locale)}</time>
+            </div>
+          )
+        })}
         {pending.map((item) => (
           <div key={item.clientId} className={`bubble mine ${failed.has(item.clientId) && online ? 'failed' : 'sending'}`}>
             <p>{item.body}</p>
@@ -114,6 +203,7 @@ export function ChatScreen({ friend, onBack }: { friend: Friend; onBack: () => v
       </div>
       {rejected && <ErrorNote>{t('chat.rejected')}</ErrorNote>}
       <form className="chat-input" onSubmit={submit}>
+        <MediaComposer target={isGroup ? { groupId: id } : { friendId: id }} online={online} send={sendMedia} />
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -126,6 +216,13 @@ export function ChatScreen({ friend, onBack }: { friend: Friend; onBack: () => v
           <SendIcon />
         </button>
       </form>
+
+      <MediaViewer item={viewing} onClose={() => setViewing(null)} onDelete={deleteMedia} />
+      {isGroup ? (
+        <GroupInfoSheet open={infoOpen} onClose={() => setInfoOpen(false)} group={group.data ?? null} onChanged={() => void reloadGroup()} onLeft={onBack} />
+      ) : (
+        <FriendInfoSheet open={infoOpen} onClose={() => setInfoOpen(false)} friend={conversation.friend} />
+      )}
     </section>
   )
 }
