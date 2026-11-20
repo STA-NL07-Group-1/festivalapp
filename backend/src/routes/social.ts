@@ -220,14 +220,22 @@ export function socialRoutes(r: Router, deps: Deps): void {
 
   r.post('/pins', { operationId: 'createPin', rateLimit: { limit: 30, windowMs: 60_000 } }, async (ctx) => {
     const user = requireUser(ctx)
-    const body = ctx.body as { label: string; latitude: number; longitude: number; visibility?: string }
+    const body = ctx.body as { label: string; latitude: number; longitude: number; visibility?: string; clientId?: string }
     const festivalId = requireFestival(ctx)
     const { rows } = await db.query(
-      `INSERT INTO pins (user_id, festival_id, label, latitude, longitude, visibility)
-       VALUES ($1, $6, $2, $3, $4, $5) RETURNING *`,
-      [user.id, body.label.trim(), body.latitude, body.longitude, body.visibility ?? 'vrienden', festivalId],
+      `INSERT INTO pins (user_id, festival_id, label, latitude, longitude, visibility, client_id)
+       VALUES ($1, $6, $2, $3, $4, $5, $7)
+       ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
+       RETURNING *`,
+      [user.id, body.label.trim(), body.latitude, body.longitude, body.visibility ?? 'vrienden', festivalId, body.clientId ?? null],
     )
-    const pin = toPin(rows[0]!)
+    // Al eerder binnengekomen (opnieuw verstuurd uit de wachtrij): de bestaande pin teruggeven, niet nog eens rondsturen
+    if (!rows[0]) {
+      const existing = await db.query('SELECT * FROM pins WHERE user_id = $1 AND client_id = $2', [user.id, body.clientId])
+      if (!existing.rows[0]) throw notFound()
+      return { status: 200, body: toPin(existing.rows[0]) }
+    }
+    const pin = toPin(rows[0])
     if (pin.visibility === 'vrienden') deps.realtime.toUsers(await friendIds(db, user.id), 'pin.created', pin, festivalId)
     return { status: 201, body: pin }
   })

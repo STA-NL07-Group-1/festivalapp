@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError } from '../api/client'
-import { deliver, enqueue, flushOutbox, removeFromOutbox } from './outbox'
-import { loadOffline } from './offlineStore'
+import { api, ApiError, setFestival } from '../api/client'
+import { deliver, deliverPin, enqueue, enqueuePin, flushOutbox, removeFromOutbox } from './outbox'
+import { loadOffline, saveOffline } from './offlineStore'
 
 vi.mock('../api/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../api/client')>()
@@ -55,6 +55,58 @@ describe('wachtrij voor chatberichten', () => {
   it('verdwijnt als hetzelfde bericht via de WebSocket binnenkomt', () => {
     const item = enqueue('vriend', 'Kom je?')
     removeFromOutbox(item.clientId)
+    expect(stored()).toHaveLength(0)
+  })
+})
+
+describe('wachtrij voor pins', () => {
+  const pin = { label: 'Bij de bar', latitude: 52.38, longitude: 4.87, visibility: 'vrienden' as const }
+  const saved = (clientId: string) => ({ id: 'p1', userId: 'ik', ...pin, createdAt: new Date().toISOString(), clientId })
+
+  beforeEach(() => {
+    post.mockReset()
+    setFestival('festival-a')
+  })
+
+  it('zonder bereik blijft de pin staan en gaat hij later met hetzelfde clientId', async () => {
+    const item = enqueuePin(pin)
+    expect(item.festivalId).toBe('festival-a')
+    post.mockRejectedValueOnce(new ApiError(0, 'offline', 'offline'))
+    await expect(deliverPin(item)).rejects.toThrow()
+    expect(stored()).toHaveLength(1)
+
+    post.mockResolvedValueOnce(saved(item.clientId))
+    await flushOutbox()
+    expect(post).toHaveBeenLastCalledWith('/pins', { ...pin, clientId: item.clientId })
+    expect(stored()).toHaveLength(0)
+  })
+
+  it('een pin van een ander festival wacht, en houdt berichten erachter niet tegen', async () => {
+    const item = enqueuePin(pin)
+    setFestival('festival-b')
+    const chat = enqueue('vriend', 'Ik heb een pin gezet')
+    post.mockResolvedValueOnce(message('Ik heb een pin gezet', chat.clientId))
+    await flushOutbox()
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(stored().map((i) => i.clientId)).toEqual([item.clientId])
+    removeFromOutbox(item.clientId)
+  })
+
+  it('na een lege wachtrij blijft versturen werken (de wachtrij raakt niet vast)', async () => {
+    await flushOutbox()
+    await flushOutbox()
+    const item = enqueuePin(pin)
+    post.mockResolvedValueOnce(saved(item.clientId))
+    await flushOutbox()
+    expect(post).toHaveBeenCalledWith('/pins', { ...pin, clientId: item.clientId })
+    expect(stored()).toHaveLength(0)
+  })
+
+  it('oude berichten in de wachtrij (zonder kind) gaan gewoon als bericht', async () => {
+    saveOffline('outbox', [{ clientId: 'oud-1', friendId: 'vriend', body: 'Van vóór de update', createdAt: new Date().toISOString() }])
+    post.mockResolvedValueOnce(message('Van vóór de update', 'oud-1'))
+    await flushOutbox()
+    expect(post).toHaveBeenCalledWith('/messages/vriend', { body: 'Van vóór de update', clientId: 'oud-1' })
     expect(stored()).toHaveLength(0)
   })
 })

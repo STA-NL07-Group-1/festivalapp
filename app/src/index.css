@@ -1086,6 +1086,10 @@ textarea {
   font-size: 26px;
   filter: drop-shadow(0 2px 3px rgb(5 2 15 / 0.5));
 }
+/* Pin in de wachtrij (nog niet bij de server) */
+.marker-pin.pending span {
+  opacity: 0.5;
+}
 .marker-me span {
   display: block;
   width: 20px;

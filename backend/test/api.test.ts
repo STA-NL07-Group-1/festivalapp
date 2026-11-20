@@ -392,6 +392,19 @@ describe.skipIf(!databaseUrl)('backend', () => {
       expect((await api('DELETE', `/pins/${own.id}`, { token: b.accessToken })).status).toBe(404)
     })
 
+    it('een pin uit de wachtrij die twee keer binnenkomt, wordt maar één keer opgeslagen', async () => {
+      const a = await register('Vince')
+      const clientId = '7e2f1c0a-3b4d-4e5f-8a9b-0c1d2e3f4a5b'
+      const body = { label: 'Bij de bar', latitude: 52.38, longitude: 4.87, clientId }
+      const first = await api('POST', '/pins', { token: a.accessToken, body })
+      expect(first.status).toBe(201)
+      const again = await api('POST', '/pins', { token: a.accessToken, body })
+      expect(again.status).toBe(200)
+      expect(again.body.id).toBe(first.body.id)
+      const mine = await api('GET', '/pins', { token: a.accessToken })
+      expect(mine.body.filter((p: { label: string }) => p.label === 'Bij de bar')).toHaveLength(1)
+    })
+
     it('chatten met een vriend, niet met een vreemde', async () => {
       const a = await register('Sam')
       const b = await register('Tess')

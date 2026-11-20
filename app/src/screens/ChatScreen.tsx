@@ -4,7 +4,7 @@ import { BackIcon, SendIcon } from '../components/icons'
 import { Avatar, Empty, ErrorNote, Skeleton } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatTime } from '../lib/format'
-import { deliver, enqueue, flushOutbox, removeFromOutbox, useOutbox, type OutboxItem } from '../lib/outbox'
+import { deliver, enqueue, flushOutbox, isMessageItem, removeFromOutbox, useOutbox, type MessageItem } from '../lib/outbox'
 import { useAsync } from '../lib/useAsync'
 import { useRealtime, useSession } from '../state/session'
 
@@ -45,14 +45,14 @@ export function ChatScreen({ friend, onBack }: { friend: Friend; onBack: () => v
   const ordered = useMemo(() => [...(messages.data ?? [])].reverse(), [messages.data])
   const pending = useMemo(() => {
     const sent = new Set(ordered.map((m) => m.clientId).filter(Boolean))
-    return outbox.filter((item) => item.friendId === friend.id && !sent.has(item.clientId))
+    return outbox.filter(isMessageItem).filter((item) => item.friendId === friend.id && !sent.has(item.clientId))
   }, [outbox, ordered, friend.id])
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' })
   }, [messages.data, pending.length])
 
-  async function send(item: OutboxItem) {
+  async function send(item: MessageItem) {
     setFailed((set) => new Set([...set].filter((id) => id !== item.clientId)))
     setRejected(false)
     try {
@@ -74,7 +74,7 @@ export function ChatScreen({ friend, onBack }: { friend: Friend; onBack: () => v
     void send(enqueue(friend.id, body))
   }
 
-  const status = (item: OutboxItem) => {
+  const status = (item: MessageItem) => {
     if (failed.has(item.clientId)) {
       return (
         <button type="button" className="bubble-retry" onClick={() => void send(item)}>

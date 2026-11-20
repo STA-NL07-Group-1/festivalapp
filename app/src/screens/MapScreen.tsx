@@ -2,13 +2,14 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { CircleMarker, MapContainer, Marker, Popup, TileLayer, Tooltip, useMapEvents } from 'react-leaflet'
-import { api, type CrowdLevel, type FriendLocation, type MapPoint, type MapPointKind, type Pin, type Stage } from '../api/client'
+import { api, ApiError, currentFestival, type CrowdLevel, type FriendLocation, type MapPoint, type MapPointKind, type Pin, type Stage } from '../api/client'
 import { PinIcon } from '../components/icons'
 import { SosButton } from '../components/SosButton'
 import { Segmented, Sheet } from '../components/ui'
 import { useI18n } from '../i18n'
 import { distanceM, formatRelative, formatTime, initials } from '../lib/format'
 import { festivalKey, loadOffline, saveOffline } from '../lib/offlineStore'
+import { deliverPin, enqueuePin, flushOutbox, isPinItem, removeFromOutbox, useOutbox } from '../lib/outbox'
 import { useAsync, useOfflineAsync } from '../lib/useAsync'
 import { useRealtime, useSession } from '../state/session'
 
@@ -26,6 +27,8 @@ const CROWD_COLORS: Record<string, string> = {
 const friendIcon = (name: string) =>
   L.divIcon({ className: 'marker-friend', html: `<span>${escapeHtml(initials(name))}</span>`, iconSize: [36, 36], iconAnchor: [18, 18] })
 const pinIcon = L.divIcon({ className: 'marker-pin', html: '<span>📍</span>', iconSize: [28, 28], iconAnchor: [14, 26] })
+// Pin die nog in de wachtrij staat (geen bereik): doorzichtig, tot de server hem heeft
+const pendingPinIcon = L.divIcon({ className: 'marker-pin pending', html: '<span>📍</span>', iconSize: [28, 28], iconAnchor: [14, 26] })
 const meIcon = L.divIcon({ className: 'marker-me', html: '<span></span>', iconSize: [20, 20], iconAnchor: [10, 10] })
 // Laatst bekende eigen positie (zonder actuele GPS): grijs in plaats van blauw
 const meLastIcon = L.divIcon({ className: 'marker-me last-known', html: '<span></span>', iconSize: [20, 20], iconAnchor: [10, 10] })
@@ -114,7 +117,8 @@ export function MapScreen() {
   useEffect(() => {
     const cameBack = online && !wasOnline.current
     wasOnline.current = online
-    if (cameBack) reloadAll()
+    // Eerst wat in de wachtrij staat versturen (zoals pins), dan alles opnieuw ophalen
+    if (cameBack) void flushOutbox().then(reloadAll)
   }, [online, reloadAll])
 
   // Live-verbinding terug na een onderbreking (slaapstand, ander netwerk, nieuw token):
@@ -142,6 +146,10 @@ export function MapScreen() {
   const [myPosition, setMyPosition] = useState<GeolocationCoordinates | null>(null)
   const [lastPosition] = useState(() => loadOffline<LastPosition>('my-position'))
   const [geoError, setGeoError] = useState(false)
+  const [pinFailed, setPinFailed] = useState(false)
+  // Pins die nog niet bij de server zijn (geen bereik); alleen die van het festival dat nu open is
+  const outbox = useOutbox()
+  const pendingPins = useMemo(() => outbox.filter(isPinItem).filter((p) => p.festivalId === currentFestival()), [outbox])
   const [placing, setPlacing] = useState(false)
   const [draft, setDraft] = useState<{ lat: number; lng: number } | null>(null)
   const [visibility, setVisibility] = useState<'vrienden' | 'prive'>('vrienden')
@@ -219,10 +227,20 @@ export function MapScreen() {
     if (!draft) return
     const label = String(new FormData(event.currentTarget).get('label') ?? '').trim()
     if (!label) return
-    const pin = await api.post<Pin>('/pins', { label, latitude: draft.lat, longitude: draft.lng, visibility })
-    setPins((list) => [pin, ...(list ?? [])])
+    // Eerst in de wachtrij: zonder bereik staat de pin meteen (doorzichtig) op de kaart en gaat hij
+    // vanzelf naar de server zodra er weer bereik is. Met bereik gaat hij meteen.
+    const item = enqueuePin({ label, latitude: draft.lat, longitude: draft.lng, visibility })
     setDraft(null)
     setPlacing(false)
+    setPinFailed(false)
+    if (!online) return
+    try {
+      const pin = await deliverPin(item)
+      setPins((list) => (list?.some((p) => p.id === pin.id) ? list : [pin, ...(list ?? [])]))
+    } catch (error) {
+      // Weigert de server hem voorgoed, dan is hij al uit de wachtrij; anders blijft hij wachten
+      if (error instanceof ApiError && (error.status === 400 || error.status === 404)) setPinFailed(true)
+    }
   }
 
   async function deletePin(id: string) {
@@ -306,6 +324,20 @@ export function MapScreen() {
             </Marker>
           ))}
 
+          {pendingPins.map((pin) => (
+            <Marker key={pin.clientId} position={[pin.latitude, pin.longitude]} icon={pendingPinIcon}>
+              <Popup>
+                <strong>{pin.label}</strong>
+                <br />
+                <small>{t('map.pinPending')}</small>
+                <br />
+                <button type="button" className="link danger" onClick={() => removeFromOutbox(pin.clientId)}>
+                  {t('common.delete')}
+                </button>
+              </Popup>
+            </Marker>
+          ))}
+
           {friends.data?.map((f) => (
             <Marker key={f.userId} position={[f.latitude, f.longitude]} icon={friendIcon(f.displayName)}>
               <Popup>
@@ -346,6 +378,11 @@ export function MapScreen() {
           <span className="dot" aria-hidden="true" /> {sharing ? t('map.sharing') : t('map.notSharing')}
         </button>
         {geoError && sharing && <p className="map-note">{t('map.geoDenied')}</p>}
+        {pinFailed && (
+          <p className="map-note" role="alert">
+            {t('map.pinFailed')}
+          </p>
+        )}
         {notLive && <p className="map-note" role="status">{t('map.notLive')}</p>}
         {!online && stages.savedAt && <p className="map-note">{t('map.offlineData', { time: formatTime(stages.savedAt, locale) })}</p>}
         {placing && !draft && <p className="map-note">{t('map.tapToPlace')}</p>}
