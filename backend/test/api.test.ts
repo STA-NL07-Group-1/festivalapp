@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp, createHttpServer } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 import { createPool } from '../src/db.ts'
+import { stripJpegMetadata } from '../src/routes/photos.ts'
 import { resolveSocket } from '../src/festival.ts'
 import type { Mail } from '../src/mail.ts'
 import { createPush, pushSubscriptionsFor, type Push, type PushKind, type PushMessage } from '../src/push.ts'
@@ -1074,6 +1075,117 @@ describe.skipIf(!databaseUrl)('backend', () => {
       const res = await api('POST', '/chatbot', { token: visitor.accessToken, body: { question: 'Wanneer speelt Nova Lights?' } })
       expect(res.status).toBe(200)
       expect(res.body.answer).toContain('Hoofdpodium')
+    })
+  })
+
+  describe("foto's", () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 7)])
+    // Minimale jpeg met een JFIF-segment (APP0) en een Exif-segment (APP1) met een herkenbare "GPS"-tekst
+    const segment = (marker: number, payload: Buffer) => Buffer.concat([Buffer.from([0xff, marker, (payload.length + 2) >> 8, (payload.length + 2) & 0xff]), payload])
+    const jpegWithExif = Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      segment(0xe0, Buffer.from('JFIF\0\x01\x01\0\0\x01\0\x01\0\0')),
+      segment(0xe1, Buffer.from('Exif\0\0GPS-52.37N-4.89E')),
+      Buffer.from([0xff, 0xda, 0x00, 0x04, 0x00, 0x00, 0x12, 0x34, 0xff, 0xd9]),
+    ])
+    const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } })
+
+    it('haalt Exif (locatie) uit een jpeg en laat de rest staan', () => {
+      const clean = stripJpegMetadata(jpegWithExif)
+      expect(clean.includes(Buffer.from('GPS-52.37N'))).toBe(false)
+      expect(clean.includes(Buffer.from('JFIF'))).toBe(true)
+      expect(clean.subarray(0, 2).equals(Buffer.from([0xff, 0xd8]))).toBe(true)
+      expect(clean.subarray(-6).equals(Buffer.from([0x00, 0x00, 0x12, 0x34, 0xff, 0xd9]))).toBe(true)
+      // Geen jpeg: ongewijzigd terug
+      expect(stripJpegMetadata(png).equals(png)).toBe(true)
+    })
+
+    it('vrienden delen foto\'s: alleen de twee vrienden zien ze', async () => {
+      const a = await register('FotoAnna')
+      const b = await register('FotoBram')
+      const c = await register('FotoCas')
+      await befriend(a, b)
+
+      const up = await api('POST', '/photos', { token: a.accessToken, body: { image: jpegWithExif.toString('base64'), caption: ' Bij het podium ', friendId: b.id } })
+      expect(up.status, JSON.stringify(up.body)).toBe(201)
+      expect(up.body).toMatchObject({ uploadedBy: a.id, friendId: b.id, groupId: null, contentType: 'image/jpeg', caption: 'Bij het podium' })
+
+      // De ander ziet hem in het album, met de vriend vanuit zijn eigen kant
+      const list = await api('GET', `/photos?friendId=${a.id}`, { token: b.accessToken })
+      expect(list.status).toBe(200)
+      expect(list.body).toHaveLength(1)
+      expect(list.body[0].friendId).toBe(a.id)
+
+      const res = await fetch(`${base}/photos/${up.body.id}`, auth(b.accessToken))
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toBe('image/jpeg')
+      expect(res.headers.get('cache-control')).toContain('private')
+      const bytes = Buffer.from(await res.arrayBuffer())
+      expect(bytes.includes(Buffer.from('GPS-52.37N'))).toBe(false)
+
+      // Een derde ziet niets: 404 voor foto en album, ook niet via de lijst
+      expect((await fetch(`${base}/photos/${up.body.id}`, auth(c.accessToken))).status).toBe(404)
+      expect((await api('GET', `/photos?friendId=${a.id}`, { token: c.accessToken })).status).toBe(404)
+      expect((await fetch(`${base}/photos/${up.body.id}`)).status).toBe(401)
+      // Na het verbreken van de vriendschap is de foto ook voor de ander niet meer te zien
+      expect((await api('DELETE', `/friends/${b.id}`, { token: a.accessToken })).status).toBe(204)
+      expect((await fetch(`${base}/photos/${up.body.id}`, auth(b.accessToken))).status).toBe(404)
+    })
+
+    it('weigert foute uploads', async () => {
+      const a = await register('FotoDora')
+      const b = await register('FotoEmre')
+      const stranger = await register('FotoFien')
+      await befriend(a, b)
+      const post = (body: object) => api('POST', '/photos', { token: a.accessToken, body })
+      const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64')
+      expect((await post({ image: svg, friendId: b.id })).status).toBe(400)
+      const tooBig = Buffer.concat([png, Buffer.alloc(5 * 1024 * 1024)]).toString('base64')
+      expect((await post({ image: tooBig, friendId: b.id })).status).toBe(400)
+      // Precies één bestemming
+      expect((await post({ image: png.toString('base64') })).status).toBe(400)
+      expect((await post({ image: png.toString('base64'), friendId: b.id, groupId: b.id })).status).toBe(400)
+      // Geen vriend: 404, zodat je niet kunt nagaan of iemand bestaat
+      expect((await post({ image: png.toString('base64'), friendId: stranger.id })).status).toBe(404)
+      expect((await api('POST', '/photos', { body: { image: png.toString('base64'), friendId: b.id } })).status).toBe(401)
+    })
+
+    it('in een groep zien alleen de leden de foto, en een beheerder mag hem weghalen', async () => {
+      const owner = await register('FotoGijs')
+      const member = await register('FotoHan')
+      const outsider = await register('FotoIris')
+      const { rows } = await testDb.query<{ id: string }>("INSERT INTO groups (name, created_by) VALUES ('Festivalcrew', $1) RETURNING id", [owner.id])
+      const groupId = rows[0]!.id
+      await testDb.query("INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'beheerder'), ($1, $3, 'lid')", [groupId, owner.id, member.id])
+
+      const up = await api('POST', '/photos', { token: member.accessToken, body: { image: png.toString('base64'), groupId } })
+      expect(up.status, JSON.stringify(up.body)).toBe(201)
+      expect(up.body).toMatchObject({ groupId, friendId: null })
+
+      expect((await api('GET', `/photos?groupId=${groupId}`, { token: owner.accessToken })).body).toHaveLength(1)
+      expect((await api('GET', `/photos?groupId=${groupId}`, { token: outsider.accessToken })).status).toBe(404)
+      expect((await api('POST', '/photos', { token: outsider.accessToken, body: { image: png.toString('base64'), groupId } })).status).toBe(404)
+      expect((await fetch(`${base}/photos/${up.body.id}`, auth(outsider.accessToken))).status).toBe(404)
+      const res = await fetch(`${base}/photos/${up.body.id}`, auth(member.accessToken))
+      expect(Buffer.from(await res.arrayBuffer()).equals(png)).toBe(true)
+
+      // Weghalen: niet door een buitenstaander (404), wel door de beheerder
+      expect((await api('DELETE', `/photos/${up.body.id}`, { token: outsider.accessToken })).status).toBe(404)
+      expect((await api('DELETE', `/photos/${up.body.id}`, { token: owner.accessToken })).status).toBe(204)
+      expect((await fetch(`${base}/photos/${up.body.id}`, auth(member.accessToken))).status).toBe(404)
+    })
+
+    it('alleen de uploader haalt een foto uit een album van twee vrienden weg; berichten blijven staan', async () => {
+      const a = await register('FotoJan')
+      const b = await register('FotoKim')
+      await befriend(a, b)
+      const up = await api('POST', '/photos', { token: a.accessToken, body: { image: png.toString('base64'), friendId: b.id } })
+      expect((await api('DELETE', `/photos/${up.body.id}`, { token: b.accessToken })).status).toBe(403)
+      // Een chatbericht met deze foto blijft staan, zonder foto
+      await testDb.query("INSERT INTO messages (sender_id, recipient_id, body, kind, photo_id) VALUES ($1, $2, 'kijk!', 'foto', $3)", [a.id, b.id, up.body.id])
+      expect((await api('DELETE', `/photos/${up.body.id}`, { token: a.accessToken })).status).toBe(204)
+      const msg = await testDb.query<{ photo_id: string | null }>("SELECT photo_id FROM messages WHERE body = 'kijk!' AND sender_id = $1", [a.id])
+      expect(msg.rows[0]!.photo_id).toBeNull()
     })
   })
 
