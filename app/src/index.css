@@ -1045,6 +1045,9 @@ textarea {
   font-weight: 900;
   letter-spacing: 0.04em;
   user-select: none;
+  -webkit-user-select: none;
+  /* Geen menu van iOS (kopiëren, delen) als je de knop ingedrukt houdt */
+  -webkit-touch-callout: none;
   touch-action: none;
   position: relative;
   box-shadow: 0 10px 30px rgb(255 77 94 / 0.45);
@@ -1584,6 +1587,8 @@ textarea {
 }
 .sheet {
   max-height: 90vh;
+  /* dvh: de echte hoogte van het scherm, ook als de werkbalk van Safari of het toetsenbord in beeld is */
+  max-height: 90dvh;
   overflow-y: auto;
   background: var(--surface);
   border-radius: 28px 28px 0 0;
@@ -1601,6 +1606,16 @@ textarea {
 }
 .sheet-backdrop.closing .sheet {
   animation: slide-down var(--dur-sheet-exit) var(--ease-out) forwards;
+}
+/* Streepje en titel: hier mag de browser nooit zelf scrollen, zodat omlaag vegen op iOS altijd werkt */
+.sheet-grab {
+  display: grid;
+  gap: 16px;
+  touch-action: none;
+  cursor: grab;
+  /* Tot aan de randen van het venster, zodat het vlak groot genoeg is voor een duim */
+  margin: -12px -20px 0;
+  padding: 12px 20px 0;
 }
 .sheet-header {
   display: flex;

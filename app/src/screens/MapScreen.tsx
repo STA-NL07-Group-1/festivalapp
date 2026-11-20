@@ -146,7 +146,7 @@ export function MapScreen() {
   const [myPosition, setMyPosition] = useState<GeolocationCoordinates | null>(null)
   const [lastPosition] = useState(() => loadOffline<LastPosition>('my-position'))
   const [geoError, setGeoError] = useState(false)
-  const [pinFailed, setPinFailed] = useState(false)
+  const [pinError, setPinError] = useState<'map.pinFailed' | 'map.pinDeleteFailed' | null>(null)
   // Pins die nog niet bij de server zijn (geen bereik); alleen die van het festival dat nu open is
   const outbox = useOutbox()
   const pendingPins = useMemo(() => outbox.filter(isPinItem).filter((p) => p.festivalId === currentFestival()), [outbox])
@@ -171,7 +171,15 @@ export function MapScreen() {
     useCallback((c) => setCrowd((list) => [...(list ?? []).filter((x) => x.stageId !== c.stageId), c]), [setCrowd]),
   )
   const setPins = pins.setData
-  useRealtime<Pin>('pin.created', useCallback((p) => setPins((list) => [p, ...(list ?? [])]), [setPins]))
+  // Ook je eigen pins komen hier binnen (de server stuurt ze ook naar jou), dus niet dubbel toevoegen
+  useRealtime<Pin>(
+    'pin.created',
+    useCallback((p) => setPins((list) => (list?.some((x) => x.id === p.id) ? list : [p, ...(list ?? [])])), [setPins]),
+  )
+  useRealtime<{ id: string }>(
+    'pin.removed',
+    useCallback(({ id }) => setPins((list) => (list ?? []).filter((p) => p.id !== id)), [setPins]),
+  )
   const setPoints = points.setData
   useRealtime<MapPoint>(
     'map_point.update',
@@ -232,20 +240,25 @@ export function MapScreen() {
     const item = enqueuePin({ label, latitude: draft.lat, longitude: draft.lng, visibility })
     setDraft(null)
     setPlacing(false)
-    setPinFailed(false)
+    setPinError(null)
     if (!online) return
     try {
       const pin = await deliverPin(item)
       setPins((list) => (list?.some((p) => p.id === pin.id) ? list : [pin, ...(list ?? [])]))
     } catch (error) {
       // Weigert de server hem voorgoed, dan is hij al uit de wachtrij; anders blijft hij wachten
-      if (error instanceof ApiError && (error.status === 400 || error.status === 404)) setPinFailed(true)
+      if (error instanceof ApiError && (error.status === 400 || error.status === 404)) setPinError('map.pinFailed')
     }
   }
 
   async function deletePin(id: string) {
-    await api.delete(`/pins/${id}`)
-    setPins((list) => (list ?? []).filter((p) => p.id !== id))
+    try {
+      await api.delete(`/pins/${id}`)
+      setPins((list) => (list ?? []).filter((p) => p.id !== id))
+    } catch {
+      // Geen bereik: de pin blijft staan, je kunt het straks opnieuw proberen
+      setPinError('map.pinDeleteFailed')
+    }
   }
 
   return (
@@ -378,9 +391,9 @@ export function MapScreen() {
           <span className="dot" aria-hidden="true" /> {sharing ? t('map.sharing') : t('map.notSharing')}
         </button>
         {geoError && sharing && <p className="map-note">{t('map.geoDenied')}</p>}
-        {pinFailed && (
+        {pinError && (
           <p className="map-note" role="alert">
-            {t('map.pinFailed')}
+            {t(pinError)}
           </p>
         )}
         {notLive && <p className="map-note" role="status">{t('map.notLive')}</p>}

@@ -28,7 +28,7 @@ info:
     zo niet in de URL (en dus niet in logs). Een ticket is 30 seconden geldig en werkt één keer.
     Je krijgt alleen berichten van dat festival.
     De server stuurt berichten als JSON: `{ "type": "...", "data": { ... } }`. Types:
-    `friend.location`, `friend.location.removed`, `friend.added`, `friend.removed`, `pin.created`,
+    `friend.location`, `friend.location.removed`, `friend.added`, `friend.removed`, `pin.created`, `pin.removed`,
     `chat.message`, `timetable.update`, `announcement`, `crowd.update`,
     `map_point.update`, `map_point.removed`, `sos.update` (alleen personeel van het festival). De client stuurt alleen `ping`; alle wijzigingen
     lopen via REST zodat autorisatie op één plek zit.

@@ -4,8 +4,9 @@ import { StarIcon } from '../components/icons'
 import { Empty, ErrorNote, IconSwap, Screen, Segmented, Skeleton, Toast } from '../components/ui'
 import { useI18n } from '../i18n'
 import { festivalDay, formatDay, formatTime } from '../lib/format'
-import { useAsync } from '../lib/useAsync'
-import { useRealtime } from '../state/session'
+import { festivalKey } from '../lib/offlineStore'
+import { useAsync, useOfflineAsync } from '../lib/useAsync'
+import { useRealtime, useSession } from '../state/session'
 
 type View = 'all' | 'mine' | 'friends'
 
@@ -96,11 +97,15 @@ export function TimetableScreen({ initialFriend }: { initialFriend?: string | nu
   // Act die net een ster kreeg: die krijgt een korte puls
   const [popped, setPopped] = useState<string | null>(null)
 
-  const stages = useAsync(() => api.get<Stage[]>('/stages'))
-  const performances = useAsync(() => api.get<Performance[]>('/performances'))
-  const mine = useAsync(() => api.get<Performance[]>('/me/timetable'))
+  // Podia, optredens en je eigen timetable ook op de telefoon bewaren: zonder bereik zie je dan de
+  // laatst opgehaalde timetable. App.tsx bouwt dit scherm opnieuw op bij een ander festival.
+  const { me } = useSession()
+  const key = (name: string) => festivalKey(me?.festivalId ?? null, name)
+  const stages = useOfflineAsync(key('stages'), () => api.get<Stage[]>('/stages'))
+  const performances = useOfflineAsync(key('performances'), () => api.get<Performance[]>('/performances'))
+  const mine = useOfflineAsync(key('my-timetable'), () => api.get<Performance[]>('/me/timetable'))
   const signups = useAsync(() => api.get<Signup[]>('/me/signups'))
-  const friends = useAsync(() => api.get<Friend[]>('/friends'))
+  const friends = useOfflineAsync('friends', () => api.get<Friend[]>('/friends'))
   const friendTimetable = useAsync(async () => {
     if (!friendId) return null
     try {

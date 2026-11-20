@@ -82,9 +82,12 @@ const SWIPE_CLOSE_DISTANCE = 110
 const SWIPE_CLOSE_SPEED = 0.5
 
 /**
- * Venster omlaag vegen om het te sluiten, zoals bij een app. Alleen als de inhoud bovenaan staat:
- * anders scrol je gewoon door het venster. Touch-events (niet pointer-events), omdat we het scrollen
- * van de browser moeten kunnen tegenhouden zodra iemand echt aan het vegen is.
+ * Venster omlaag vegen om het te sluiten, zoals bij een app.
+ * - Bovenaan (streepje en titel, `.sheet-grab`) werkt vegen altijd. Daar staat touch-action: none in de CSS,
+ *   dus de browser begint daar nooit zelf te scrollen. Dat is nodig voor iOS: zodra Safari zelf scrolt,
+ *   mogen wij dat niet meer tegenhouden en volgt het venster je vinger niet.
+ * - In de rest van het venster alleen als de inhoud bovenaan staat; anders scrol je gewoon door het venster.
+ * Touch-events (niet pointer-events), omdat we het scrollen van de browser moeten kunnen tegenhouden.
  */
 function useSwipeToClose(ref: RefObject<HTMLDivElement | null>, onClose: () => void, active: boolean) {
   const close = useRef(onClose)
@@ -100,11 +103,14 @@ function useSwipeToClose(ref: RefObject<HTMLDivElement | null>, onClose: () => v
     let distance = 0
     let tracking = false
     let dragging = false
+    // Begonnen op het streepje of de titel: dan is elke beweging omlaag vegen, ook als het venster gescrold is
+    let fromGrab = false
 
     const onStart = (e: TouchEvent) => {
       const touch = e.touches[0]
       if (e.touches.length !== 1 || !touch) return
-      tracking = sheet.scrollTop <= 0
+      fromGrab = e.target instanceof Element && e.target.closest('.sheet-grab') !== null && !e.target.closest('button')
+      tracking = fromGrab || sheet.scrollTop <= 0
       dragging = false
       distance = 0
       startX = touch.clientX
@@ -115,6 +121,7 @@ function useSwipeToClose(ref: RefObject<HTMLDivElement | null>, onClose: () => v
       const touch = e.touches[0]
       if (!tracking || !touch) return
       distance = touch.clientY - startY
+      if (fromGrab) e.preventDefault()
       if (!dragging) {
         const sideways = Math.abs(touch.clientX - startX)
         // Pas na 8 px weten we of het een veeg omlaag is; omhoog of opzij = gewoon scrollen of tikken
@@ -183,13 +190,16 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
         aria-hidden={closing || undefined}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sheet-handle" aria-hidden="true" />
-        <header className="sheet-header">
-          <h2>{content.title}</h2>
-          <button type="button" className="icon-button sheet-close" onClick={onClose} aria-label={t('common.close')}>
-            <CloseIcon />
-          </button>
-        </header>
+        {/* Hier kun je het venster altijd omlaag vegen (zie useSwipeToClose) */}
+        <div className="sheet-grab">
+          <div className="sheet-handle" aria-hidden="true" />
+          <header className="sheet-header">
+            <h2>{content.title}</h2>
+            <button type="button" className="icon-button sheet-close" onClick={onClose} aria-label={t('common.close')}>
+              <CloseIcon />
+            </button>
+          </header>
+        </div>
         {content.children}
       </div>
     </div>,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadOffline, saveOffline } from './offlineStore'
 
 /**
@@ -10,6 +10,14 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [error, setError] = useState<unknown>(null)
   const loadRef = useRef(load)
   const key = JSON.stringify(deps)
+  // Andere deps (bijv. een ander festival): de oude gegevens horen er niet meer bij. Tijdens het renderen
+  // terugzetten (patroon uit de React-docs), zodat er geen frame met gegevens van de vorige keer is.
+  const [loadedKey, setLoadedKey] = useState(key)
+  if (loadedKey !== key) {
+    setLoadedKey(key)
+    setData(undefined)
+    setError(null)
+  }
 
   useEffect(() => {
     loadRef.current = load
@@ -50,7 +58,8 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[] = []) {
  * en `fromCache` = true.
  */
 export function useOfflineAsync<T>(cacheKey: string, load: () => Promise<T>) {
-  const [initial] = useState(() => loadOffline<T>(cacheKey))
+  // Per sleutel: wisselt de sleutel (ander festival), dan de bewaarde gegevens van die sleutel
+  const initial = useMemo(() => loadOffline<T>(cacheKey), [cacheKey])
   const [savedAt, setSavedAt] = useState<string | null>(initial?.savedAt ?? null)
   const [fromCache, setFromCache] = useState(initial !== null)
   const result = useAsync(async () => {

@@ -19,6 +19,7 @@ import { I18nProvider } from '../i18n'
 import { detectLocale } from '../i18n/translate'
 import type { Locale } from '../lib/format'
 import { clearOffline, clearOfflineFestival, loadOffline, saveOffline } from '../lib/offlineStore'
+import { disablePush } from '../lib/push'
 import { connectRealtime, type RealtimeConnection } from '../lib/realtime'
 
 type Status = 'loading' | 'anonymous' | 'authenticated'
@@ -265,6 +266,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await startSession(await api.post<AuthTokens>('/auth/register', { ...input, locale }))
       },
       async logout() {
+        // Eerst de pushmeldingen van dit apparaat afmelden: anders krijgt de telefoon na het uitloggen
+        // nog steeds de meldingen van dit account (bijv. als iemand anders hier inlogt)
+        await disablePush().catch(() => {})
         await api.post('/auth/logout').catch(() => {})
         endSession()
       },
