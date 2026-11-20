@@ -131,8 +131,13 @@ function AccountScreen({ onBack }: { onBack: () => void }) {
   }
 
   const save = async (patch: Parameters<typeof updateMe>[0]) => {
-    await updateMe(patch)
-    setToast(t('settings.saved'))
+    try {
+      await updateMe(patch)
+      setToast(t('settings.saved'))
+    } catch (e) {
+      // Bijv. geen bereik: de schakelaar blijft dan gewoon zoals hij was
+      setToast(e instanceof ApiError && e.status === 0 ? t('common.offline') : t('common.error'))
+    }
   }
 
   return (
@@ -186,7 +191,11 @@ function AccountScreen({ onBack }: { onBack: () => void }) {
             type="button"
             className="button danger-outline"
             onClick={() => {
-              if (window.confirm(t('settings.deleteConfirm'))) void disablePush().finally(() => void deleteAccount())
+              if (!window.confirm(t('settings.deleteConfirm'))) return
+              void disablePush()
+                .catch(() => {})
+                .then(deleteAccount)
+                .catch(() => setToast(t('common.error')))
             }}
           >
             {t('settings.delete')}
@@ -269,8 +278,13 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
   if (!me) return null
 
   const save = async (patch: Parameters<typeof updateMe>[0]) => {
-    await updateMe(patch)
-    setToast(t('settings.saved'))
+    try {
+      await updateMe(patch)
+      setToast(t('settings.saved'))
+    } catch (e) {
+      // Bijv. geen bereik: de schakelaar blijft dan gewoon zoals hij was
+      setToast(e instanceof ApiError && e.status === 0 ? t('common.offline') : t('common.error'))
+    }
   }
 
   const pushMessage: Partial<Record<PushState, string>> = {
@@ -343,11 +357,13 @@ function AssistantScreen({ onBack }: { onBack: () => void }) {
   const [history, setHistory] = useState<QA[]>([])
   const [question, setQuestion] = useState('')
   const [error, setError] = useState(false)
+  // Wacht op een antwoord: dan geen tweede vraag, anders komt het antwoord bij de verkeerde vraag te staan
+  const waiting = history.at(-1)?.answer === null
 
   async function ask(event: FormEvent) {
     event.preventDefault()
     const q = question.trim()
-    if (!q) return
+    if (!q || waiting) return
     setQuestion('')
     setError(false)
     setHistory((h) => [...h, { question: q, answer: null }])
@@ -386,7 +402,9 @@ function AssistantScreen({ onBack }: { onBack: () => void }) {
           maxLength={500}
           aria-label={t('assistant.placeholder')}
         />
-        <button className="button primary small">{t('assistant.ask')}</button>
+        <button className="button primary small" disabled={waiting}>
+          {t('assistant.ask')}
+        </button>
       </form>
       <p className="muted small">{t('assistant.privacy')}</p>
     </Screen>

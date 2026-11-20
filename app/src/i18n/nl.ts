@@ -67,6 +67,7 @@ export const nl = {
   'map.pinFriends': 'Zichtbaar voor vrienden',
   'map.pinPending': 'Nog niet verstuurd: gaat vanzelf zodra je weer bereik hebt.',
   'map.pinFailed': 'De pin kon niet worden opgeslagen. Probeer het opnieuw.',
+  'map.pinDeleteFailed': 'De pin kon niet worden verwijderd. Probeer het opnieuw als je bereik hebt.',
   'map.you': 'Jij',
   'map.geoDenied': 'De app mag je locatie niet gebruiken. Zet dit aan in de instellingen van je telefoon.',
   'map.updated': 'bijgewerkt {time}',
@@ -168,6 +169,7 @@ export const nl = {
   'sos.status.open': 'Verstuurd',
   'sos.status.in_behandeling': 'Er komt iemand naar je toe',
   'sos.status.afgehandeld': 'Afgehandeld',
+  'sos.new': 'Nieuwe melding maken',
 
   'more.title': 'Meer',
   'more.assistant': 'Festivalassistent',

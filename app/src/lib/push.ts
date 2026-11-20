@@ -45,3 +45,16 @@ export async function disablePush(): Promise<PushState> {
   }
   return 'off'
 }
+
+/**
+ * Staat er op dit apparaat al een abonnement (bijv. van de vorige keer inloggen)? Dan opnieuw aan de
+ * server doorgeven, zodat de meldingen naar het account gaan dat nu is ingelogd.
+ */
+export async function syncPush(): Promise<void> {
+  if (!pushSupported() || Notification.permission !== 'granted') return
+  const registration = await navigator.serviceWorker.getRegistration()
+  const subscription = await registration?.pushManager.getSubscription()
+  if (!subscription) return
+  const json = subscription.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } }
+  await api.post('/push-subscriptions', { endpoint: json.endpoint, keys: json.keys })
+}

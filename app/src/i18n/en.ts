@@ -68,6 +68,7 @@ export const en: Record<TranslationKey, string> = {
   'map.pinFriends': 'Visible to friends',
   'map.pinPending': 'Not sent yet: it goes automatically once you have signal again.',
   'map.pinFailed': 'The pin could not be saved. Please try again.',
+  'map.pinDeleteFailed': 'The pin could not be deleted. Try again once you have signal.',
   'map.you': 'You',
   'map.geoDenied': "The app isn't allowed to use your location. Turn it on in your phone's settings.",
   'map.updated': 'updated {time}',
@@ -169,6 +170,7 @@ export const en: Record<TranslationKey, string> = {
   'sos.status.open': 'Sent',
   'sos.status.in_behandeling': 'Someone is on their way',
   'sos.status.afgehandeld': 'Resolved',
+  'sos.new': 'Send a new alert',
 
   'more.title': 'More',
   'more.assistant': 'Festival assistant',

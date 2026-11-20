@@ -6,7 +6,7 @@ import { QrScanner } from '../components/QrScanner'
 import { Avatar, Empty, Screen, Sheet, Skeleton, Toast } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatRelative, formatTime } from '../lib/format'
-import { useAsync } from '../lib/useAsync'
+import { useAsync, useOfflineAsync } from '../lib/useAsync'
 import { useRealtime } from '../state/session'
 
 /** Haal de code uit een gescande QR (URL met ?vriend=…) of getypte tekst. */
@@ -33,7 +33,8 @@ export function FriendsScreen({
   onOpenTimetable: (friendId: string) => void
 }) {
   const { t, locale } = useI18n()
-  const friends = useAsync(() => api.get<Friend[]>('/friends'))
+  // Ook zonder bereik je vriendenlijst zien (om te chatten: berichten gaan dan in de wachtrij)
+  const friends = useOfflineAsync('friends', () => api.get<Friend[]>('/friends'))
   const locations = useAsync(() => api.get<FriendLocation[]>('/friends/locations'))
   const [adding, setAdding] = useState(initialCode !== null)
   const [codeVersion, setCodeVersion] = useState(0)

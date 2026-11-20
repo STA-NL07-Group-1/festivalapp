@@ -186,6 +186,8 @@ export function ResetPasswordScreen({ token, onDone }: { token: string; onDone: 
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const password = String(form.get('password') ?? '')
+    // Twee velden van hetzelfde formulier vergelijken; hier valt niets te raden via de tijd
+    // eslint-disable-next-line security/detect-possible-timing-attacks
     if (password !== String(form.get('repeat') ?? '')) {
       setError(t('auth.passwordMismatch'))
       return

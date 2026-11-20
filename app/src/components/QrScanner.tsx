@@ -16,6 +16,12 @@ export function QrScanner({ onResult, onClose }: { onResult: (text: string) => v
   const video = useRef<HTMLVideoElement>(null)
   const Detector = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector
   const [failed, setFailed] = useState(!Detector || !navigator.mediaDevices?.getUserMedia)
+  // In een ref: de ouder geeft elke render een nieuwe functie mee. Stond die in de dependencies van het
+  // effect hieronder, dan ging de camera bij elke render uit en weer aan.
+  const resultRef = useRef(onResult)
+  useEffect(() => {
+    resultRef.current = onResult
+  })
 
   useEffect(() => {
     if (failed || !Detector) return
@@ -32,7 +38,7 @@ export function QrScanner({ onResult, onClose }: { onResult: (text: string) => v
         while (!stopped) {
           const codes = await detector.detect(video.current)
           if (codes[0]?.rawValue) {
-            onResult(codes[0].rawValue)
+            resultRef.current(codes[0].rawValue)
             return
           }
           await new Promise((r) => setTimeout(r, 250))
@@ -46,7 +52,7 @@ export function QrScanner({ onResult, onClose }: { onResult: (text: string) => v
       stopped = true
       stream?.getTracks().forEach((track) => track.stop())
     }
-  }, [Detector, failed, onResult])
+  }, [Detector, failed])
 
   if (failed) {
     return (

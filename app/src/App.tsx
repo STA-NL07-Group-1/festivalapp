@@ -6,8 +6,10 @@ import { FestivalBar, NoFestivalScreen } from './components/festival'
 import { Toast } from './components/ui'
 import { BellIcon, CalendarIcon, MapIcon, MenuIcon, UsersIcon } from './components/icons'
 import { useI18n } from './i18n'
-import { flushOutbox } from './lib/outbox'
-import { useAsync } from './lib/useAsync'
+import { flushOutbox, useOutbox } from './lib/outbox'
+import { syncPush } from './lib/push'
+import { festivalKey } from './lib/offlineStore'
+import { useOfflineAsync } from './lib/useAsync'
 import { AuthScreen, ResetPasswordScreen } from './screens/AuthScreen'
 import { ChatScreen } from './screens/ChatScreen'
 import { FriendsScreen } from './screens/FriendsScreen'
@@ -22,6 +24,7 @@ const TABS: Tab[] = ['kaart', 'timetable', 'vrienden', 'meldingen', 'meer']
 // Deze tabbladen horen bij één festival. Vrienden en Meer horen bij je account.
 const FESTIVAL_TABS: Tab[] = ['kaart', 'timetable', 'meldingen']
 const DISMISSED_KEY = 'festivalapp.dismissedEmergencies'
+const OUTBOX_RETRY_MS = 15_000
 
 /** Leest deep links: ?vriend=CODE (QR), ?tab=…, ?chat=<userId> (pushmelding) */
 function readDeepLink() {
@@ -97,7 +100,7 @@ function UpdatePrompt() {
 
 function Shell() {
   const { t, locale } = useI18n()
-  const { online, festival } = useSession()
+  const { online, live, festival } = useSession()
   const festivalId = festival?.id ?? null
   const [deepLink] = useState(readDeepLink)
   const [tab, setTab] = useState<Tab>(deepLink.friendCode ? 'vrienden' : (deepLink.tab ?? 'kaart'))
@@ -107,7 +110,10 @@ function Shell() {
   const [unread, setUnread] = useState(0)
 
   // Mededelingen van het gekozen festival; opnieuw ophalen als je van festival wisselt
-  const announcements = useAsync(() => (festivalId ? api.get<Announcement[]>('/announcements') : Promise.resolve([])), [festivalId])
+  // Ook op de telefoon bewaard, zodat je een noodbericht zonder bereik nog kunt teruglezen
+  const announcements = useOfflineAsync(festivalKey(festivalId, 'announcements'), () =>
+    festivalId ? api.get<Announcement[]>('/announcements') : Promise.resolve([]),
+  )
   const setAnnouncements = announcements.setData
   useRealtime<Announcement>(
     'announcement',
@@ -121,10 +127,30 @@ function Shell() {
     ),
   )
 
-  // Weer bereik: chatberichten uit de wachtrij alsnog versturen, ook als de chat niet open staat
+  // Wachtrij (chatberichten en pins) alsnog versturen, ook als de chat of de kaart niet open staat:
+  // zodra er weer bereik is, de live-verbinding terug is of je de app weer opent. Een iPhone meldt
+  // "weer online" niet altijd, daarom ook elke 15 seconden zolang er iets wacht.
+  const waiting = useOutbox().length > 0
   useEffect(() => {
-    if (online) void flushOutbox()
-  }, [online])
+    if (online || live) void flushOutbox()
+  }, [online, live])
+  useEffect(() => {
+    if (!waiting) return
+    const retry = () => {
+      if (document.visibilityState === 'visible') void flushOutbox()
+    }
+    const timer = setInterval(retry, OUTBOX_RETRY_MS)
+    document.addEventListener('visibilitychange', retry)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', retry)
+    }
+  }, [waiting])
+
+  // Pushmeldingen van dit apparaat aan het ingelogde account koppelen (zie syncPush)
+  useEffect(() => {
+    void syncPush().catch(() => {})
+  }, [])
 
   // Chat openen vanuit een pushmelding
   useEffect(() => {

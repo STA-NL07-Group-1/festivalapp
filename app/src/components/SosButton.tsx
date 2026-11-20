@@ -60,6 +60,7 @@ export function SosButton({ position }: { position: GeolocationCoordinates | nul
         onPointerDown={start}
         onPointerUp={stop}
         onPointerLeave={stop}
+        onPointerCancel={stop}
         onContextMenu={(e) => e.preventDefault()}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') setOpen(true)
@@ -78,6 +79,12 @@ export function SosButton({ position }: { position: GeolocationCoordinates | nul
             <p>
               <strong>{t(`sos.status.${alert.status}`)}</strong>
             </p>
+            {/* Afgehandeld: dan moet je opnieuw hulp kunnen vragen */}
+            {alert.status === 'afgehandeld' && (
+              <button type="button" className="button" onClick={() => setAlert(null)}>
+                {t('sos.new')}
+              </button>
+            )}
           </div>
         ) : (
           <form className="form" onSubmit={(e) => void send(e)}>

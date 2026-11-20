@@ -236,14 +236,22 @@ export function socialRoutes(r: Router, deps: Deps): void {
       return { status: 200, body: toPin(existing.rows[0]) }
     }
     const pin = toPin(rows[0])
-    if (pin.visibility === 'vrienden') deps.realtime.toUsers(await friendIds(db, user.id), 'pin.created', pin, festivalId)
+    // Ook naar jezelf: zo staat de pin meteen op je kaart (en op je andere apparaten), ook als hij vanuit
+    // de wachtrij werd verstuurd terwijl je een ander scherm open had
+    const audience = pin.visibility === 'vrienden' ? [...(await friendIds(db, user.id)), user.id] : [user.id]
+    deps.realtime.toUsers(audience, 'pin.created', pin, festivalId)
     return { status: 201, body: pin }
   })
 
   r.delete('/pins/:pinId', { operationId: 'deletePin' }, async (ctx) => {
     const user = requireUser(ctx)
-    const { rowCount } = await db.query('DELETE FROM pins WHERE id = $1 AND user_id = $2', [uuidParam(ctx, 'pinId'), user.id])
-    if (!rowCount) throw notFound()
+    const { rows } = await db.query<{ id: string; festival_id: string }>(
+      'DELETE FROM pins WHERE id = $1 AND user_id = $2 RETURNING id, festival_id',
+      [uuidParam(ctx, 'pinId'), user.id],
+    )
+    if (!rows[0]) throw notFound()
+    // Vrienden zien de pin anders nog tot ze de kaart opnieuw laden
+    deps.realtime.toUsers([...(await friendIds(db, user.id)), user.id], 'pin.removed', { id: rows[0].id }, rows[0].festival_id)
     return { status: 204 }
   })
 
