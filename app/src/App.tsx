@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import { api, type Announcement, type Friend } from './api/client'
+import { api, type Announcement, type Friend, type Group } from './api/client'
 import { FestivalBar, NoFestivalScreen } from './components/festival'
 import { Toast } from './components/ui'
 import { BellIcon, CalendarIcon, MapIcon, MenuIcon, UsersIcon } from './components/icons'
@@ -11,7 +11,7 @@ import { syncPush } from './lib/push'
 import { festivalKey } from './lib/offlineStore'
 import { useOfflineAsync } from './lib/useAsync'
 import { AuthScreen, ResetPasswordScreen } from './screens/AuthScreen'
-import { ChatScreen } from './screens/ChatScreen'
+import { ChatScreen, conversationKey, type Conversation } from './screens/ChatScreen'
 import { FriendsScreen } from './screens/FriendsScreen'
 import { MapScreen } from './screens/MapScreen'
 import { MoreScreen } from './screens/MoreScreen'
@@ -26,13 +26,14 @@ const FESTIVAL_TABS: Tab[] = ['kaart', 'timetable', 'meldingen']
 const DISMISSED_KEY = 'festivalapp.dismissedEmergencies'
 const OUTBOX_RETRY_MS = 15_000
 
-/** Leest deep links: ?vriend=CODE (QR), ?tab=…, ?chat=<userId> (pushmelding) */
+/** Leest deep links: ?vriend=CODE (QR), ?tab=…, ?chat=<userId> en ?group=<groupId> (pushmelding) */
 function readDeepLink() {
   const params = new URLSearchParams(window.location.search)
   const tab = params.get('tab')
   const link = {
     friendCode: params.get('vriend'),
     chatWith: params.get('chat'),
+    groupId: params.get('group'),
     tab: TABS.includes(tab as Tab) ? (tab as Tab) : null,
   }
   if (window.location.search) window.history.replaceState(null, '', window.location.pathname)
@@ -104,7 +105,8 @@ function Shell() {
   const festivalId = festival?.id ?? null
   const [deepLink] = useState(readDeepLink)
   const [tab, setTab] = useState<Tab>(deepLink.friendCode ? 'vrienden' : (deepLink.tab ?? 'kaart'))
-  const [chatWith, setChatWith] = useState<Friend | null>(null)
+  // Open gesprek (vriend of groep); dan staat de chat over het hele scherm
+  const [chatWith, setChatWith] = useState<Conversation | null>(null)
   const [timetableFriend, setTimetableFriend] = useState<string | null>(null)
   const [dismissed, setDismissed] = useState<string[]>(readDismissed)
   const [unread, setUnread] = useState(0)
@@ -157,9 +159,16 @@ function Shell() {
     if (!deepLink.chatWith) return
     void api.get<Friend[]>('/friends').then((friends) => {
       const friend = friends.find((f) => f.id === deepLink.chatWith)
-      if (friend) setChatWith(friend)
+      if (friend) setChatWith({ type: 'friend', friend })
     })
   }, [deepLink.chatWith])
+  useEffect(() => {
+    if (!deepLink.groupId) return
+    void api.get<Group[]>('/groups').then((groups) => {
+      const group = groups.find((g) => g.id === deepLink.groupId)
+      if (group) setChatWith({ type: 'group', group })
+    })
+  }, [deepLink.groupId])
 
   const emergency = announcements.data?.find((a) => a.level === 'nood' && !dismissed.includes(a.id))
   const dismiss = (id: string) => {
@@ -180,7 +189,9 @@ function Shell() {
       setTab(next)
     })
   }
-  const openChat = (friend: Friend | null) => withTransition(() => setChatWith(friend))
+  const openChat = (friend: Friend | null) => withTransition(() => setChatWith(friend ? { type: 'friend', friend } : null))
+  const openGroup = (group: Group) => withTransition(() => setChatWith({ type: 'group', group }))
+  const closeChat = useCallback(() => withTransition(() => setChatWith(null)), [])
 
   const labels: Record<Tab, string> = {
     kaart: t('tab.map'),
@@ -218,7 +229,7 @@ function Shell() {
 
       <main className="content">
         {chatWith ? (
-          <ChatScreen friend={chatWith} onBack={() => openChat(null)} />
+          <ChatScreen key={conversationKey(chatWith)} conversation={chatWith} onBack={closeChat} />
         ) : !festival && FESTIVAL_TABS.includes(tab) ? (
           <NoFestivalScreen />
         ) : (
@@ -232,6 +243,7 @@ function Shell() {
               <FriendsScreen
                 initialCode={deepLink.friendCode}
                 onOpenChat={openChat}
+                onOpenGroup={openGroup}
                 onOpenTimetable={(id) =>
                   withTransition(() => {
                     setTimetableFriend(id)

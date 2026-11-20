@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp, createHttpServer } from '../src/app.ts'
 import { loadConfig } from '../src/config.ts'
 import { createPool } from '../src/db.ts'
-import { stripJpegMetadata } from '../src/routes/photos.ts'
+import { mediaType, stripJpegMetadata } from '../src/routes/photos.ts'
 import { resolveSocket } from '../src/festival.ts'
 import type { Mail } from '../src/mail.ts'
 import { createPush, pushSubscriptionsFor, type Push, type PushKind, type PushMessage } from '../src/push.ts'
@@ -1152,7 +1152,7 @@ describe.skipIf(!databaseUrl)('backend', () => {
       const post = (body: object) => api('POST', '/photos', { token: a.accessToken, body })
       const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64')
       expect((await post({ image: svg, friendId: b.id })).status).toBe(400)
-      const tooBig = Buffer.concat([png, Buffer.alloc(5 * 1024 * 1024)]).toString('base64')
+      const tooBig = Buffer.concat([png, Buffer.alloc(25 * 1024 * 1024)]).toString('base64')
       expect((await post({ image: tooBig, friendId: b.id })).status).toBe(400)
       // Precies één bestemming
       expect((await post({ image: png.toString('base64') })).status).toBe(400)
@@ -1198,6 +1198,135 @@ describe.skipIf(!databaseUrl)('backend', () => {
       expect((await api('DELETE', `/photos/${up.body.id}`, { token: a.accessToken })).status).toBe(204)
       const msg = await testDb.query<{ photo_id: string | null }>("SELECT photo_id FROM messages WHERE body = 'kijk!' AND sender_id = $1", [a.id])
       expect(msg.rows[0]!.photo_id).toBeNull()
+    })
+
+    it("herkent video's (mp4, mov, webm) en weigert heic", () => {
+      const ftyp = (brand: string) => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from(`ftyp${brand}`), Buffer.alloc(16)])
+      expect(mediaType(ftyp('isom'))).toBe('video/mp4')
+      expect(mediaType(ftyp('qt  '))).toBe('video/quicktime')
+      expect(mediaType(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]))).toBe('video/webm')
+      expect(mediaType(ftyp('heic'))).toBeNull()
+      expect(mediaType(png)).toBe('image/png')
+    })
+
+    it('een foto of video in de chat: eerst uploaden, dan een bericht met photoId', async () => {
+      const a = await register('MediaAnna')
+      const b = await register('MediaBram')
+      const c = await register('MediaCas')
+      await befriend(a, b)
+      await befriend(a, c)
+      const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(64, 1)])
+      const up = await api('POST', '/photos', { token: a.accessToken, body: { image: mp4.toString('base64'), friendId: b.id } })
+      expect(up.status, JSON.stringify(up.body)).toBe(201)
+      expect(up.body.contentType).toBe('video/mp4')
+
+      const sent = await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { photoId: up.body.id, body: 'Moet je zien' } })
+      expect(sent.status, JSON.stringify(sent.body)).toBe(201)
+      expect(sent.body).toMatchObject({ kind: 'foto', photoId: up.body.id, mediaType: 'video/mp4', body: 'Moet je zien', groupId: null, recipientId: b.id })
+      // Alleen een foto, zonder tekst, mag ook
+      const only = await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { photoId: up.body.id } })
+      expect(only.status).toBe(201)
+      expect(only.body.body).toBeNull()
+
+      const list = await api('GET', `/messages/${a.id}`, { token: b.accessToken })
+      expect(list.body.filter((m: { kind: string }) => m.kind === 'foto')).toHaveLength(2)
+
+      // Een foto uit het album met Bram kun je niet naar Cas sturen
+      expect((await api('POST', `/messages/${c.id}`, { token: a.accessToken, body: { photoId: up.body.id } })).status).toBe(404)
+      // Leeg bericht: 400
+      expect((await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { clientId: crypto.randomUUID() } })).status).toBe(400)
+    })
+  })
+
+  describe('groepen', () => {
+    it('groep maken met vrienden; alleen leden zien hem', async () => {
+      const owner = await register('GroepOla')
+      const friend = await register('GroepPim')
+      const stranger = await register('GroepQuin')
+      await befriend(owner, friend)
+
+      // Alleen vrienden kun je toevoegen
+      expect((await api('POST', '/groups', { token: owner.accessToken, body: { name: 'Crew', memberIds: [stranger.id] } })).status).toBe(404)
+
+      const created = await api('POST', '/groups', { token: owner.accessToken, body: { name: ' Crew ', memberIds: [friend.id, friend.id, owner.id] } })
+      expect(created.status, JSON.stringify(created.body)).toBe(201)
+      expect(created.body).toMatchObject({ name: 'Crew', myRole: 'beheerder' })
+      expect(created.body.members.map((m: { id: string; role: string }) => `${m.id}:${m.role}`).sort()).toEqual(
+        [`${owner.id}:beheerder`, `${friend.id}:lid`].sort(),
+      )
+      const groupId = created.body.id as string
+
+      // Systeemregels "aangemaakt" en "toegevoegd"
+      const messages = await api('GET', `/groups/${groupId}/messages`, { token: friend.accessToken })
+      expect(messages.body.map((m: { kind: string; systemEvent: { type: string } }) => m.systemEvent?.type).sort()).toEqual(['aangemaakt', 'toegevoegd'])
+
+      const list = await api('GET', '/groups', { token: friend.accessToken })
+      expect(list.body).toEqual([expect.objectContaining({ id: groupId, name: 'Crew', myRole: 'lid', memberCount: 2 })])
+      expect((await api('GET', `/groups/${groupId}`, { token: stranger.accessToken })).status).toBe(404)
+      expect((await api('GET', `/groups/${groupId}/messages`, { token: stranger.accessToken })).status).toBe(404)
+      expect((await api('POST', `/groups/${groupId}/messages`, { token: stranger.accessToken, body: { body: 'hoi' } })).status).toBe(404)
+    })
+
+    it('chatten in de groep, met ongelezen berichten en een foto uit het groepsalbum', async () => {
+      const a = await register('GroepRik')
+      const b = await register('GroepSem')
+      await befriend(a, b)
+      const groupId = (await api('POST', '/groups', { token: a.accessToken, body: { name: 'Bar', memberIds: [b.id] } })).body.id as string
+
+      const clientId = crypto.randomUUID()
+      const sent = await api('POST', `/groups/${groupId}/messages`, { token: a.accessToken, body: { body: 'Wie wil er iets?', clientId } })
+      expect(sent.status).toBe(201)
+      expect(sent.body).toMatchObject({ groupId, recipientId: null, kind: 'tekst', body: 'Wie wil er iets?' })
+      // Opnieuw verstuurd (slecht bereik): hetzelfde bericht, niet dubbel
+      const again = await api('POST', `/groups/${groupId}/messages`, { token: a.accessToken, body: { body: 'Wie wil er iets?', clientId } })
+      expect(again.status).toBe(200)
+      expect(again.body.id).toBe(sent.body.id)
+
+      expect((await api('GET', '/groups', { token: b.accessToken })).body[0].unread).toBe(1)
+      await api('GET', `/groups/${groupId}/messages`, { token: b.accessToken })
+      expect((await api('GET', '/groups', { token: b.accessToken })).body[0].unread).toBe(0)
+
+      const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, 3)])
+      const photo = await api('POST', '/photos', { token: b.accessToken, body: { image: png.toString('base64'), groupId } })
+      const withPhoto = await api('POST', `/groups/${groupId}/messages`, { token: b.accessToken, body: { photoId: photo.body.id } })
+      expect(withPhoto.status).toBe(201)
+      expect(withPhoto.body).toMatchObject({ kind: 'foto', mediaType: 'image/png' })
+      // Een foto uit een gesprek tussen twee vrienden hoort niet in de groep
+      const pairPhoto = await api('POST', '/photos', { token: a.accessToken, body: { image: png.toString('base64'), friendId: b.id } })
+      expect((await api('POST', `/groups/${groupId}/messages`, { token: a.accessToken, body: { photoId: pairPhoto.body.id } })).status).toBe(404)
+    })
+
+    it('leden beheren: alleen de beheerder voegt toe of verwijdert, verlaten kan iedereen', async () => {
+      const admin = await register('GroepTom')
+      const lid = await register('GroepUma')
+      const nieuw = await register('GroepVera')
+      await befriend(admin, lid)
+      await befriend(admin, nieuw)
+      await befriend(lid, nieuw)
+      const groupId = (await api('POST', '/groups', { token: admin.accessToken, body: { name: 'Camping', memberIds: [lid.id] } })).body.id as string
+
+      // Een gewoon lid mag niemand toevoegen of de naam veranderen
+      expect((await api('POST', `/groups/${groupId}/members`, { token: lid.accessToken, body: { userIds: [nieuw.id] } })).status).toBe(403)
+      expect((await api('PATCH', `/groups/${groupId}`, { token: lid.accessToken, body: { name: 'X' } })).status).toBe(403)
+
+      const added = await api('POST', `/groups/${groupId}/members`, { token: admin.accessToken, body: { userIds: [nieuw.id] } })
+      expect(added.status).toBe(200)
+      expect(added.body.members).toHaveLength(3)
+      const renamed = await api('PATCH', `/groups/${groupId}`, { token: admin.accessToken, body: { name: 'Camping C' } })
+      expect(renamed.body.name).toBe('Camping C')
+
+      // Een lid kan geen ander lid verwijderen, wel zelf weggaan
+      expect((await api('DELETE', `/groups/${groupId}/members/${nieuw.id}`, { token: lid.accessToken })).status).toBe(403)
+      expect((await api('DELETE', `/groups/${groupId}/members/${lid.id}`, { token: lid.accessToken })).status).toBe(204)
+      expect((await api('GET', `/groups/${groupId}`, { token: lid.accessToken })).status).toBe(404)
+
+      // De laatste beheerder gaat weg: wie het langst in de groep zit wordt beheerder
+      expect((await api('DELETE', `/groups/${groupId}/members/${admin.id}`, { token: admin.accessToken })).status).toBe(204)
+      expect((await api('GET', `/groups/${groupId}`, { token: nieuw.accessToken })).body.myRole).toBe('beheerder')
+      // Het laatste lid weg: de groep verdwijnt
+      expect((await api('DELETE', `/groups/${groupId}/members/${nieuw.id}`, { token: nieuw.accessToken })).status).toBe(204)
+      const { rowCount } = await testDb.query('SELECT 1 FROM groups WHERE id = $1', [groupId])
+      expect(rowCount).toBe(0)
     })
   })
 

@@ -1366,10 +1366,29 @@ export interface components {
             id: string;
             /** Format: uuid */
             senderId: string;
-            /** Format: uuid */
-            recipientId: string;
-            /** @description Platte tekst; de app toont dit nooit als HTML. */
-            body: string;
+            /**
+             * Format: uuid
+             * @description Bij een gesprek met één vriend
+             */
+            recipientId: string | null;
+            /**
+             * Format: uuid
+             * @description Bij een bericht in een groep
+             */
+            groupId: string | null;
+            /** @description `foto` = foto of video (zie `mediaType`); `systeem` = regel als "Anna heeft Bram toegevoegd" */
+            kind: "tekst" | "foto" | "systeem";
+            /** @description Platte tekst (bij een foto het bijschrift); de app toont dit nooit als HTML. */
+            body: string | null;
+            /**
+             * Format: uuid
+             * @description Foto of video; null als die is weggehaald
+             */
+            photoId: string | null;
+            /** @description Type van de foto of video, bijv. image/jpeg of video/mp4 */
+            mediaType: string | null;
+            /** @description Alleen bij `systeem`: { type, actor: {id, name}, targets: [{id, name}], value } */
+            systemEvent: components["schemas"]["SystemEvent"] | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1380,13 +1399,88 @@ export interface components {
              */
             clientId?: string | null;
         };
+        /** @description Systeemregel in een groep; de app maakt er zelf een zin van */
+        SystemEvent: {
+            /** @enum {string} */
+            type: "aangemaakt" | "toegevoegd" | "verwijderd" | "verlaten" | "naam";
+            actor: { id: string; name: string };
+            targets: { id: string; name: string }[];
+            value: string | null;
+        };
         SendMessage: {
-            body: string;
+            body?: string;
+            /** Format: uuid */
+            photoId?: string;
             /**
              * Format: uuid
              * @description Eigen id van de app; hetzelfde id twee keer = hetzelfde bericht
              */
             clientId?: string;
+        };
+        Photo: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            uploadedBy: string;
+            /** Format: uuid */
+            groupId: string | null;
+            /** Format: uuid */
+            friendId: string | null;
+            /** @enum {string} */
+            contentType: "image/png" | "image/jpeg" | "image/webp" | "video/mp4" | "video/quicktime" | "video/webm";
+            caption: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        UploadPhoto: {
+            /** @description Foto (png, jpeg, webp) of video (mp4, mov, webm) als base64, maximaal 25 MB */
+            image: string;
+            caption?: string;
+            /** Format: uuid */
+            friendId?: string;
+            /** Format: uuid */
+            groupId?: string;
+        };
+        /** @enum {string} */
+        GroupRole: "beheerder" | "lid";
+        Group: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description: string | null;
+            myRole: components["schemas"]["GroupRole"];
+            memberCount: number;
+            /** @description Berichten sinds je de groep voor het laatst opende */
+            unread: number;
+            /** Format: date-time */
+            lastMessageAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        GroupMember: {
+            /** Format: uuid */
+            id: string;
+            displayName: string;
+            role: components["schemas"]["GroupRole"];
+            /** Format: date-time */
+            joinedAt: string;
+        };
+        GroupDetail: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description: string | null;
+            /** Format: uuid */
+            createdBy: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            myRole: components["schemas"]["GroupRole"];
+            members: components["schemas"]["GroupMember"][];
+        };
+        CreateGroup: {
+            name: string;
+            description?: string;
+            memberIds: string[];
         };
         RealtimeTicket: {
             ticket: string;

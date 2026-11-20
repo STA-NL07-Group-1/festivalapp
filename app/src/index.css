@@ -1536,6 +1536,203 @@ textarea {
   border-radius: 999px;
 }
 
+/* Naam bovenaan de chat: tik voor profiel of groepsinfo */
+.chat-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-title-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.chat-title-text h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-avatar {
+  width: 36px;
+  height: 36px;
+  background: var(--gradient-strong);
+}
+.group-avatar svg {
+  width: 20px;
+  height: 20px;
+}
+.row .group-avatar {
+  width: 40px;
+  height: 40px;
+}
+/* In een groep: wie het zei */
+.bubble-sender {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--neon-text);
+}
+/* "Anna heeft Bram toegevoegd" */
+.chat-system {
+  align-self: center;
+  max-width: 85%;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+.bubble.media {
+  padding: 4px;
+}
+.bubble.media > p,
+.bubble.media > time,
+.bubble.media > .bubble-sender {
+  padding: 0 8px;
+}
+.bubble.media .media-thumb {
+  width: min(240px, 60vw);
+  aspect-ratio: 4 / 3;
+  border-radius: 16px;
+}
+/* + knop naast het invoerveld (een label voor het verborgen bestandsveld) */
+.icon-button.attach {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.chat-media-error {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 4px);
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--danger-strong);
+  color: white;
+  font-size: 0.8rem;
+}
+.chat-input {
+  position: relative;
+}
+
+/* ---------------------------------------------------------------- foto's en video's */
+.media-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+.media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.media-thumb.video {
+  background: radial-gradient(circle at 50% 40%, var(--surface-2), #0f0920);
+}
+.media-play {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+  color: white;
+}
+.media-placeholder.failed {
+  opacity: 0.4;
+}
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.media-viewer {
+  display: grid;
+  gap: 10px;
+}
+.media-full,
+.media-preview {
+  width: 100%;
+  max-height: 60dvh;
+  object-fit: contain;
+  border-radius: 14px;
+  background: black;
+}
+.media-loading {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.upload-progress {
+  display: grid;
+  gap: 6px;
+}
+.upload-progress > span {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--gradient-strong);
+  transition: width var(--dur-fast) linear;
+}
+.upload-progress small {
+  color: var(--muted);
+}
+.shared-media {
+  display: grid;
+  gap: 10px;
+}
+.shared-media-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pick-row,
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pick-row input[type='checkbox'] {
+  width: 24px;
+  height: 24px;
+  accent-color: var(--laser);
+}
+.member-row .badge {
+  margin-left: 8px;
+}
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.tab-badge.inline {
+  position: static;
+}
+
 /* ---------------------------------------------------------------- meldingen */
 .list.news {
   background: none;

@@ -23,6 +23,11 @@ export type Festival = Schemas['Festival']
 export type FestivalInfo = Schemas['FestivalInfo']
 export type FaqItem = Schemas['FaqItem']
 export type LostItem = Schemas['LostItem']
+export type Photo = Schemas['Photo']
+export type Group = Schemas['Group']
+export type GroupDetail = Schemas['GroupDetail']
+export type GroupMember = Schemas['GroupMember']
+export type SystemEvent = Schemas['SystemEvent']
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:3000'
 
@@ -208,6 +213,45 @@ export async function requestBlob(path: string, retried = false): Promise<Blob> 
   if (res.status === 401 && !retried && (await refresh())) return requestBlob(path, true)
   if (!res.ok) throw new ApiError(res.status, 'http', res.statusText)
   return res.blob()
+}
+
+/**
+ * POST met JSON en voortgang van het versturen (voor grote bestanden, zoals een video van 25 MB).
+ * fetch laat de voortgang van een upload niet zien, XMLHttpRequest wel. Zelfde login en festival als `request`.
+ */
+export async function postWithProgress<T>(path: string, body: unknown, onProgress: (fraction: number) => void, signal?: AbortSignal, retried = false): Promise<T> {
+  const token = await getAccessToken()
+  const result = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_URL}${path}`)
+    xhr.setRequestHeader('Content-Type', 'application/json')
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    if (festivalId) xhr.setRequestHeader('X-Festival-Id', festivalId)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total)
+    }
+    xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText })
+    xhr.onerror = () => reject(new ApiError(0, 'offline', 'offline'))
+    xhr.onabort = () => reject(new ApiError(0, 'aborted', 'aborted'))
+    signal?.addEventListener('abort', () => xhr.abort())
+    xhr.send(JSON.stringify(body))
+  }).catch((error: unknown) => {
+    if (error instanceof ApiError && error.code === 'offline') setNetworkOnline(false)
+    throw error
+  })
+  setNetworkOnline(true)
+  if (result.status === 401 && !retried && (await refresh())) return postWithProgress<T>(path, body, onProgress, signal, true)
+  let parsed: unknown = undefined
+  try {
+    parsed = result.text ? JSON.parse(result.text) : undefined
+  } catch {
+    /* geen JSON */
+  }
+  if (result.status < 200 || result.status >= 300) {
+    const error = (parsed ?? {}) as { error?: string; message?: string }
+    throw new ApiError(result.status, error.error ?? 'internal', error.message ?? '')
+  }
+  return parsed as T
 }
 
 export const api = {

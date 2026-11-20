@@ -4,6 +4,7 @@ import { authRoutes } from './auth.ts'
 import { chatbotRoutes } from './chatbot.ts'
 import { contentRoutes } from './content.ts'
 import { festivalRoutes } from './festivals.ts'
+import { groupRoutes } from './groups.ts'
 import { mapRoutes } from './map.ts'
 import { organisationRoutes } from './organisation.ts'
 import { photoRoutes } from './photos.ts'
@@ -22,4 +23,5 @@ export function registerRoutes(router: Router, deps: Deps): void {
   organisationRoutes(router, deps)
   chatbotRoutes(router, deps)
   photoRoutes(router, deps)
+  groupRoutes(router, deps)
 }

@@ -164,7 +164,10 @@ export function createApp(
 }
 
 export function createHttpServer(handler: ReturnType<typeof createApp>['handler']): Server {
-  const server = createServer({ requestTimeout: 15_000, headersTimeout: 10_000 }, (req, res) => {
+  // requestTimeout: hoe lang het versturen van één verzoek mag duren. Een video van 25 MB over het drukke
+  // netwerk van een festival duurt al snel een paar minuten. De headers moeten wel binnen 10 seconden binnen
+  // zijn (headersTimeout); dat beschermt tegen verbindingen die expres heel langzaam doen.
+  const server = createServer({ requestTimeout: 300_000, headersTimeout: 10_000 }, (req, res) => {
     void handler(req, res)
   })
   return server
