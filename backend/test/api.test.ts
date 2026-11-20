@@ -14,6 +14,7 @@ import { resolveSocket } from '../src/festival.ts'
 import type { Mail } from '../src/mail.ts'
 import { createPush, pushSubscriptionsFor, type Push, type PushKind, type PushMessage } from '../src/push.ts'
 import { attachRealtime } from '../src/realtime.ts'
+import { sha256 } from '../src/security.ts'
 import { REMINDER_MINUTES, sendShowReminders } from '../src/reminders.ts'
 import { migrate } from '../scripts/migrate.ts'
 import { DEMO_PASSWORD, FIRST_FESTIVAL, SECOND_FESTIVAL, seed } from '../scripts/seed.ts'
@@ -120,9 +121,20 @@ const login = async (email: string, password = DEMO_PASSWORD) => {
 /** Id van het account achter een token */
 const idOf = async (token: string) => (await api('GET', '/me', { token })).body.id as string
 
+// De seed maakt DEMO-0001 t/m DEMO-0050, maar 0049 en 0050 zijn al van Anna en Bram. Hebben de tests
+// meer accounts nodig, dan maakt register() er zelf een ticket bij (TEST-0049, TEST-0050, …).
+const SEED_TICKETS = 48
 let ticketCounter = 1
 async function register(name: string) {
-  const ticketCode = `DEMO-${String(ticketCounter++).padStart(4, '0')}`
+  const number = ticketCounter++
+  let ticketCode = `DEMO-${String(number).padStart(4, '0')}`
+  if (number > SEED_TICKETS) {
+    ticketCode = `TEST-${String(number).padStart(4, '0')}`
+    await testDb.query(
+      `INSERT INTO tickets (festival_id, code_hash, valid_from, valid_until) VALUES ($1, $2, now() - interval '1 day', now() + interval '30 days')`,
+      [FIRST_FESTIVAL, sha256(ticketCode)],
+    )
+  }
   const res = await api('POST', '/auth/register', {
     body: { ticketCode, email: `${name.toLowerCase()}@test.nl`, password: 'een-heel-sterk-wachtwoord', displayName: name },
   })
@@ -663,7 +675,7 @@ describe.skipIf(!databaseUrl)('backend', () => {
       expect(before.status).toBe(200)
       expect(before.body.total).toBeGreaterThanOrEqual(50)
       expect(before.body.total).toBe(before.body.linked + before.body.available + before.body.unusable)
-      expect(JSON.stringify(before.body)).not.toMatch(/DEMO-|@/)
+      expect(JSON.stringify(before.body)).not.toMatch(/DEMO-|TEST-|@/)
 
       await register('Lotte')
       const after = await api('GET', '/admin/tickets/stats', { token: org.accessToken, festival: FIRST_FESTIVAL })
