@@ -299,6 +299,11 @@ Table pins {
   longitude "double precision" [not null]
   visibility pin_visibility [not null, default: 'vrienden']
   created_at timestamptz [not null, default: `now()`]
+  client_id uuid [note: 'Id van de app; uniek per gebruiker, zodat een pin uit de wachtrij niet dubbel komt (migratie 0010)']
+
+  indexes {
+    (user_id, client_id) [unique, name: 'pins_user_client_idx']
+  }
 }
 
 Table friend_requests {

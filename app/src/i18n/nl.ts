@@ -65,6 +65,8 @@ export const nl = {
   'map.pinLabel': 'Naam van de pin',
   'map.pinPrivate': 'Alleen voor mij',
   'map.pinFriends': 'Zichtbaar voor vrienden',
+  'map.pinPending': 'Nog niet verstuurd: gaat vanzelf zodra je weer bereik hebt.',
+  'map.pinFailed': 'De pin kon niet worden opgeslagen. Probeer het opnieuw.',
   'map.you': 'Jij',
   'map.geoDenied': 'De app mag je locatie niet gebruiken. Zet dit aan in de instellingen van je telefoon.',
   'map.updated': 'bijgewerkt {time}',

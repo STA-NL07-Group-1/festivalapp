@@ -1355,6 +1355,11 @@ export interface components {
             latitude: number;
             longitude: number;
             visibility?: components["schemas"]["PinVisibility"];
+            /**
+             * Format: uuid
+             * @description Eigen id van de app (wachtrij zonder bereik); dezelfde pin twee keer = één pin
+             */
+            clientId?: string;
         };
         Message: {
             /** Format: uuid */
