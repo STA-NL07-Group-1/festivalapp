@@ -60,6 +60,8 @@ tags:
     description: Pins op de kaart
   - name: chat
     description: Berichten tussen vrienden
+  - name: photos
+    description: Foto's delen met vrienden of in een groep
   - name: timetable
     description: Programma, persoonlijke timetable en aanmelden voor shows
   - name: crowd
@@ -644,6 +646,99 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ---------------------------------------------------------------- foto's
+  /photos:
+    post:
+      tags: [photos]
+      operationId: uploadPhoto
+      summary: Foto delen met een vriend of in een groep
+      description: >-
+        Geef precies één van `friendId` of `groupId` op. Het type wordt aan de inhoud herkend, niet aan
+        de bestandsnaam. Geen svg. Locatiegegevens (Exif) worden uit een jpeg gehaald. De app verkleint de foto
+        eerst, maximaal 5 MB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UploadPhoto' }
+      responses:
+        '201':
+          description: Foto opgeslagen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Photo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: Bestand te groot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    get:
+      tags: [photos]
+      operationId: listPhotos
+      summary: Album van een vriend of een groep (zonder de foto zelf)
+      description: Geef precies één van `friendId` of `groupId` op. De foto zelf haal je op met `GET /photos/{photoId}`.
+      parameters:
+        - name: friendId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: groupId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: before
+          in: query
+          description: Alleen foto's van vóór dit tijdstip (voor paginering)
+          schema: { type: string, format: date-time }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Foto's, nieuwste eerst
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: { $ref: '#/components/schemas/Photo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /photos/{photoId}:
+    parameters:
+      - $ref: '#/components/parameters/PhotoId'
+    get:
+      tags: [photos]
+      operationId: getPhoto
+      summary: De foto zelf
+      description: Alleen voor de twee vrienden of de leden van de groep. Voor anderen is het 404.
+      responses:
+        '200':
+          description: png, jpeg of webp
+          content:
+            image/png: { schema: { type: string, contentMediaType: image/png } }
+            image/jpeg: { schema: { type: string, contentMediaType: image/jpeg } }
+            image/webp: { schema: { type: string, contentMediaType: image/webp } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [photos]
+      operationId: deletePhoto
+      summary: Foto weghalen
+      description: >-
+        Alleen de uploader, of een beheerder van de groep. Een chatbericht met deze foto blijft staan,
+        zonder foto.
+      responses:
+        '204': { description: Verwijderd }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
 
   # ---------------------------------------------------------------- timetable
   /stages:
@@ -1773,6 +1868,11 @@ components:
       description: Eigen sleutel per sensor, alleen als hash opgeslagen.
 
   parameters:
+    PhotoId:
+      name: photoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     UserId:
       name: userId
       in: path
@@ -2069,6 +2169,33 @@ components:
           type: [string, 'null']
           format: uuid
           description: Het id dat de app meegaf; zo herkent de app zijn eigen bericht uit de wachtrij
+    UploadPhoto:
+      type: object
+      additionalProperties: false
+      required: [image]
+      properties:
+        image:
+          type: string
+          contentEncoding: base64
+          minLength: 4
+          maxLength: 7000000
+          pattern: '^[A-Za-z0-9+/]+={0,2}$'
+          description: png, jpeg of webp als base64, maximaal 5 MB
+        caption: { type: string, maxLength: 1000 }
+        friendId: { type: string, format: uuid }
+        groupId: { type: string, format: uuid }
+    Photo:
+      type: object
+      additionalProperties: false
+      required: [id, uploadedBy, groupId, friendId, contentType, caption, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        uploadedBy: { type: string, format: uuid }
+        groupId: { type: [string, 'null'], format: uuid, description: Het album van deze groep }
+        friendId: { type: [string, 'null'], format: uuid, description: Bij een album van twee vrienden de ander, gezien vanuit jou }
+        contentType: { type: string, enum: [image/png, image/jpeg, image/webp] }
+        caption: { type: [string, 'null'], maxLength: 1000 }
+        createdAt: { type: string, format: date-time }
     SendMessage:
       type: object
       additionalProperties: false
