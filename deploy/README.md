@@ -80,13 +80,46 @@ Wijzigingen gaan altijd via een pull request. Alleen `.env.production` pas je op
 ```bash
 # Loopt de timer? (kijk bij NEXT en LAST)
 systemctl list-timers festivalapp-deploy.timer
-# Wat deden de laatste deploys?
-journalctl -u festivalapp-deploy -n 30
+# Wat deden de laatste deploys? (sudo: anders zie je de systeemlog niet)
+sudo journalctl -u festivalapp-deploy -n 30
 # Nu meteen deployen in plaats van wachten
 sudo systemctl start festivalapp-deploy.service
 ```
 
 `flock` in de service zorgt dat er nooit twee deploys tegelijk lopen.
+
+Het script onthoudt in `~/.festivalapp-live` welke versie echt live staat. Mislukt het bouwen, dan
+probeert de volgende ronde het opnieuw. Na een wijziging aan `auto-deploy.sh` kopieer je hem opnieuw
+naar `~/auto-deploy.sh` (zie hierboven); de eerste ronde daarna bouwt één keer opnieuw.
+
+### Docker Hub onbereikbaar (verkeerd certificaat)
+
+Zie je in de log `tls: failed to verify certificate: x509: certificate is valid for …, not
+registry-1.docker.io`, dan geeft de DNS van het schoolnetwerk verouderde adressen voor Docker Hub
+(en IPv6 werkt op deze server niet). Gebeurd op 20 november 2026: daardoor stond er een paar dagen
+een oude versie live. De server gebruikt daarom Cloudflare (1.1.1.1) en Quad9 (9.9.9.9) als DNS:
+
+```bash
+# Welke DNS gebruikt de server nu?
+resolvectl status ens3 | grep -A2 "DNS Servers"
+# Komt Docker Hub goed binnen? Hoort 401 te geven
+curl -4 -s -o /dev/null -w "%{http_code}\n" https://registry-1.docker.io/v2/
+```
+
+Ingesteld met `deploy/dns.conf` (een aanvulling op het netwerkbestand dat netplan maakt):
+
+```bash
+sudo mkdir -p /etc/systemd/network/10-netplan-ens3.network.d
+sudo cp deploy/dns.conf /etc/systemd/network/10-netplan-ens3.network.d/dns.conf
+sudo networkctl reload
+```
+
+Let op: `networkctl reload` stelt de netwerkkaart opnieuw in. Je SSH-verbinding valt dan even weg en
+de site is ongeveer een minuut onbereikbaar; daarna kun je weer inloggen. Lukt dat niet, gebruik dan de
+console in het Educloud-portaal en haal het bestand weg (`sudo rm` + `sudo netplan apply`).
+
+Schakel de controle van het certificaat nooit uit (`insecure-registries`): dan haal je mogelijk
+images van een onbekende server binnen.
 
 ## Controleren of de site werkt (healthcheck)
 
