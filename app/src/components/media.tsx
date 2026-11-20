@@ -186,6 +186,9 @@ export function MediaComposer({ target, online, send }: { target: MediaTarget; o
 
   const video = file?.type.startsWith('video/') ?? false
   const sending = progress !== null
+  // Alleen een blob:-adres dat we zelf met createObjectURL maakten, nooit iets anders uit het bestand
+  // (CodeQL: "DOM text reinterpreted as HTML"). Een blob-URL kan geen script uitvoeren.
+  const safePreview = preview?.startsWith('blob:') ? preview : null
 
   return (
     <>
@@ -207,7 +210,12 @@ export function MediaComposer({ target, online, send }: { target: MediaTarget; o
       )}
       <Sheet open={file !== null} onClose={close} title={video ? t('media.sendVideo') : t('media.sendPhoto')}>
         <form className="form" onSubmit={(e) => void submit(e)}>
-          {preview && (video ? <video src={preview} controls playsInline muted className="media-preview" /> : <img src={preview} alt="" className="media-preview" />)}
+          {safePreview &&
+            (video ? (
+              <video src={safePreview} controls playsInline muted className="media-preview" />
+            ) : (
+              <img src={safePreview} alt="" className="media-preview" />
+            ))}
           <label>
             {t('media.caption')}
             <input value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={1000} disabled={sending} />
