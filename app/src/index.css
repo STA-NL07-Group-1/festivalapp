@@ -689,7 +689,10 @@ textarea {
 
 /* ---------------------------------------------------------------- app-schil */
 .shell {
-  height: 100%;
+  /* Vast aan het scherm: de pagina zelf scrolt nooit, alleen de inhoud van een tabblad.
+     Zo kan iOS de hele app (met de tabbalk) niet meer laten verschuiven. */
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
   /* Zacht podiumlicht bovenaan, zoals een stage in de verte */
@@ -742,9 +745,10 @@ textarea {
   width: fit-content;
 }
 
-/* Zwevende tabbalk */
+/* Zwevende tabbalk, vast aan het scherm: hij schuift niet mee met scrollen, het elastische
+   "doorveren" van iOS of een toetsenbord, en vegen of knijpen op de balk zelf doet niets */
 .tabbar {
-  position: absolute;
+  position: fixed;
   left: 12px;
   right: 12px;
   bottom: calc(10px + var(--safe-bottom));
@@ -761,6 +765,9 @@ textarea {
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   max-width: 560px;
   margin: 0 auto;
+  touch-action: none;
+  /* Doet niet mee met de overgang tussen tabbladen: de balk blijft gewoon staan */
+  view-transition-name: tabbar;
 }
 .tabbar button {
   position: relative;
@@ -799,10 +806,6 @@ textarea {
 .shell .content {
   position: relative;
 }
-.shell {
-  position: relative;
-}
-
 .emergency-banner {
   background: var(--danger-strong);
   color: white;
