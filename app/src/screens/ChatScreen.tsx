@@ -1,21 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { api, ApiError, type Friend, type Group, type GroupDetail, type Message } from '../api/client'
+import { api, ApiError, type GroupDetail, type Message } from '../api/client'
 import { BackIcon, GroupIcon, SendIcon } from '../components/icons'
 import { MediaComposer, MediaThumb, MediaViewer, type MediaItem } from '../components/media'
 import { Avatar, Empty, ErrorNote, Skeleton } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatTime } from '../lib/format'
+import type { Conversation } from '../lib/conversation'
 import { forgetMedia, isVideo } from '../lib/media'
+import { systemText } from '../lib/systemText'
 import { deliver, enqueue, enqueueGroup, flushOutbox, isMessageItem, removeFromOutbox, useOutbox, type MessageItem } from '../lib/outbox'
 import { useAsync } from '../lib/useAsync'
 import { useRealtime, useSession } from '../state/session'
 import { FriendInfoSheet } from './FriendInfo'
-import { GroupInfoSheet, systemText } from './GroupScreens'
-
-/** Een gesprek met één vriend of met een groep */
-export type Conversation = { type: 'friend'; friend: Friend } | { type: 'group'; group: Group }
-
-export const conversationKey = (c: Conversation) => (c.type === 'friend' ? `friend:${c.friend.id}` : `group:${c.group.id}`)
+import { GroupInfoSheet } from './GroupScreens'
 
 export function ChatScreen({ conversation, onBack }: { conversation: Conversation; onBack: () => void }) {
   const { t, locale } = useI18n()

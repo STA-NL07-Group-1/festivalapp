@@ -1,32 +1,12 @@
 // Groepsapps: een groep maken, en de groepsinfo met leden, gedeelde media en verlaten.
 import { useState, type FormEvent } from 'react'
-import { api, ApiError, type Friend, type GroupDetail, type SystemEvent } from '../api/client'
+import { api, ApiError, type Friend, type GroupDetail } from '../api/client'
 import { SharedMedia } from '../components/SharedMedia'
 import { Avatar, ErrorNote, Sheet } from '../components/ui'
 import { useI18n } from '../i18n'
 import type { Translate as TFunction } from '../i18n/translate'
 import { useAsync } from '../lib/useAsync'
 import { useSession } from '../state/session'
-
-/** Systeemregel als zin, vanuit jou gezien ("Jij hebt Bram toegevoegd") */
-export function systemText(event: SystemEvent, meId: string | null, t: TFunction): string {
-  // "door jou" / "by you": in een zin met "door" het voorwerp, niet "jij"
-  const name = (person: { id: string; name: string }) => (person.id === meId ? t('chat.youObject') : person.name)
-  const actor = name(event.actor)
-  const targets = event.targets.map(name).join(', ')
-  switch (event.type) {
-    case 'aangemaakt':
-      return t('group.event.created', { actor, name: event.value ?? '' })
-    case 'toegevoegd':
-      return t('group.event.added', { actor, targets })
-    case 'verwijderd':
-      return t('group.event.removed', { actor, targets })
-    case 'verlaten':
-      return event.actor.id === meId ? t('group.event.leftMe') : t('group.event.left', { actor })
-    case 'naam':
-      return t('group.event.renamed', { actor, name: event.value ?? '' })
-  }
-}
 
 /** Vrienden aanvinken (voor een nieuwe groep of om leden toe te voegen) */
 function FriendPicker({ friends, selected, onChange }: { friends: Friend[]; selected: ReadonlySet<string>; onChange: (next: Set<string>) => void }) {
