@@ -11,6 +11,7 @@ import { photoRoutes } from './photos.ts'
 import { programRoutes } from './program.ts'
 import { socialRoutes } from './social.ts'
 import { userRoutes } from './users.ts'
+import { walletRoutes } from './wallet.ts'
 
 export function registerRoutes(router: Router, deps: Deps): void {
   authRoutes(router, deps)
@@ -21,6 +22,7 @@ export function registerRoutes(router: Router, deps: Deps): void {
   contentRoutes(router, deps)
   userRoutes(router, deps)
   organisationRoutes(router, deps)
+  walletRoutes(router, deps)
   chatbotRoutes(router, deps)
   photoRoutes(router, deps)
   groupRoutes(router, deps)
