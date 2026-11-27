@@ -16,7 +16,9 @@ describe('timetable van het testfestival', () => {
   it('niets eindigt na 23:00, en op de laatste dag niet na 22:00', () => {
     for (const p of timetable) {
       expect(p.endsAt > p.startsAt).toBe(true)
-      expect(p.endsAt.slice(11)).toBeLessThanOrEqual(p.startsAt.startsWith(LAST_DAY) ? END_TIME : '23:00')
+      const closing = p.startsAt.startsWith(LAST_DAY) ? END_TIME : '23:00'
+      // Tijden als tekst ('20:50'): vergelijken met <= werkt omdat ze altijd twee cijfers hebben
+      expect(p.endsAt.slice(11) <= closing).toBe(true)
     }
   })
 
