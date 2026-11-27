@@ -1458,6 +1458,155 @@ describe.skipIf(!databaseUrl)('backend', () => {
     })
   })
 
+  describe('polsbanden, saldo en poortjes', () => {
+    const iot = { 'X-Device-Key': IOT_KEY }
+    /** Een willekeurige UID van 7 bytes, zoals een NTAG213 */
+    const randomTag = () => [...crypto.getRandomValues(new Uint8Array(7))].map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+    const pay = (tag: string, amountCents: number, extra: Record<string, unknown> = {}) =>
+      api('POST', '/iot/payments', { headers: iot, body: { id: crypto.randomUUID(), festivalId: FIRST_FESTIVAL, tag, amountCents, ...extra } })
+    const topup = (tag: string, amountCents: number) =>
+      api('POST', '/iot/topups', { headers: iot, body: { id: crypto.randomUUID(), festivalId: FIRST_FESTIVAL, tag, amountCents } })
+    const gate = (tag: string, direction: 'in' | 'uit' = 'in') =>
+      api('POST', '/iot/gate-scans', { headers: iot, body: { festivalId: FIRST_FESTIVAL, tag, direction } })
+    async function withBand(name: string) {
+      const user = await register(name)
+      const tag = randomTag()
+      const res = await api('POST', '/me/wristband', { token: user.accessToken, body: { tag } })
+      expect(res.status, JSON.stringify(res.body)).toBe(200)
+      return { ...user, tag }
+    }
+
+    it('polsband koppelen: één eigenaar, kleine letters zijn dezelfde polsband', async () => {
+      const user = await register('Polsband')
+      const empty = await api('GET', '/me/wallet', { token: user.accessToken })
+      expect(empty.body).toEqual({ balanceCents: 0, wristband: null, transactions: [] })
+      expect((await api('POST', '/me/wristband', { token: user.accessToken, body: { tag: 'geen-hex' } })).status).toBe(400)
+
+      const tag = randomTag()
+      const linked = await api('POST', '/me/wristband', { token: user.accessToken, body: { tag } })
+      expect(linked.status).toBe(200)
+      expect(linked.body).toMatchObject({ balanceCents: 0, wristband: { blocked: false } })
+      // Nog een keer koppelen (ook in kleine letters) is gewoon goed
+      expect((await api('POST', '/me/wristband', { token: user.accessToken, body: { tag: tag.toLowerCase() } })).status).toBe(200)
+
+      const other = await register('Polsbanddief')
+      expect((await api('POST', '/me/wristband', { token: other.accessToken, body: { tag } })).status).toBe(409)
+      // De UID zelf staat nergens in de database
+      const { rows } = await testDb.query('SELECT uid_hash FROM wristbands WHERE user_id = $1', [user.id])
+      expect(rows).toEqual([{ uid_hash: sha256(tag) }])
+    })
+
+    it('opwaarderen en betalen, dezelfde betaling telt maar één keer', async () => {
+      const user = await withBand('Betaler')
+      expect((await api('POST', '/iot/payments', { body: { id: crypto.randomUUID(), festivalId: FIRST_FESTIVAL, tag: user.tag, amountCents: 1 } })).status).toBe(401)
+      expect((await topup(user.tag, 2000)).body.balanceCents).toBe(2000)
+
+      const body = { id: crypto.randomUUID(), festivalId: FIRST_FESTIVAL, tag: user.tag, amountCents: 450 }
+      const first = await api('POST', '/iot/payments', { headers: iot, body })
+      expect(first.status).toBe(200)
+      expect(first.body).toEqual({ transactionId: body.id, balanceCents: 1550 })
+      // Terminal stuurt dezelfde betaling opnieuw: zelfde antwoord, niet nog een keer afgeschreven
+      expect((await api('POST', '/iot/payments', { headers: iot, body })).body).toEqual(first.body)
+      expect((await api('POST', '/iot/payments', { headers: iot, body: { ...body, amountCents: 999 } })).status).toBe(409)
+
+      const tooMuch = await pay(user.tag, 5000)
+      expect(tooMuch.status).toBe(402)
+      expect(tooMuch.body.error).toBe('insufficient_balance')
+      expect((await pay(randomTag(), 100)).status).toBe(404)
+
+      const wallet = await api('GET', '/me/wallet', { token: user.accessToken })
+      expect(wallet.body.balanceCents).toBe(1550)
+      expect(wallet.body.transactions.map((t: { kind: string; amountCents: number }) => [t.kind, t.amountCents])).toEqual([
+        ['betaling', 450],
+        ['opwaardering', 2000],
+      ])
+    })
+
+    it('offline betalen mag tot €10, ook als het saldo dan onder nul komt', async () => {
+      const user = await withBand('Offline')
+      await topup(user.tag, 500)
+      const earlier = new Date(Date.now() - 2 * 60 * 60_000).toISOString()
+      expect((await pay(user.tag, 1500, { offline: true, occurredAt: earlier })).status).toBe(400)
+      const res = await pay(user.tag, 1000, { offline: true, occurredAt: earlier })
+      expect(res.status).toBe(200)
+      expect(res.body.balanceCents).toBe(-500)
+      // Online kan er dan niets meer af
+      expect((await pay(user.tag, 1)).status).toBe(402)
+      // Een online betaling van uren geleden of uit de toekomst klopt niet
+      expect((await pay(user.tag, 1, { occurredAt: earlier })).status).toBe(400)
+      expect((await pay(user.tag, 1, { offline: true, occurredAt: new Date(Date.now() + 3_600_000).toISOString() })).status).toBe(400)
+    })
+
+    it('polsband kwijt: blokkeren, op de blokkadelijst, nieuwe polsband houdt het saldo', async () => {
+      const user = await withBand('Kwijt')
+      await topup(user.tag, 1200)
+      expect((await api('POST', '/me/wristband/block', { token: user.accessToken })).status).toBe(204)
+      expect((await api('POST', '/me/wristband/block', { token: user.accessToken })).status).toBe(404)
+      expect((await pay(user.tag, 100)).status).toBe(403)
+      expect((await gate(user.tag)).body).toEqual({ allowed: false, reason: 'polsband_geblokkeerd' })
+
+      const blocked = await api('GET', `/iot/blocked-tags?festivalId=${FIRST_FESTIVAL}`, { headers: iot })
+      expect(blocked.status).toBe(200)
+      expect(blocked.body.tagHashes).toContain(sha256(user.tag))
+      expect((await api('GET', '/iot/blocked-tags?festivalId=fout', { headers: iot })).status).toBe(400)
+      // Een geblokkeerde polsband kan niemand meer koppelen
+      expect((await api('POST', '/me/wristband', { token: user.accessToken, body: { tag: user.tag } })).status).toBe(403)
+
+      const newTag = randomTag()
+      const relinked = await api('POST', '/me/wristband', { token: user.accessToken, body: { tag: newTag } })
+      expect(relinked.body).toMatchObject({ balanceCents: 1200, wristband: { blocked: false } })
+      expect((await pay(newTag, 200)).body.balanceCents).toBe(1000)
+
+      // Direct een nieuwe polsband koppelen blokkeert de oude vanzelf
+      await api('POST', '/me/wristband', { token: user.accessToken, body: { tag: randomTag() } })
+      expect((await pay(newTag, 100)).status).toBe(403)
+    })
+
+    it('poortje: ticket nodig om naar binnen te gaan, eruit mag altijd', async () => {
+      const user = await withBand('Poortje')
+      expect((await gate(user.tag)).body).toEqual({ allowed: true })
+      expect((await gate(randomTag())).body).toEqual({ allowed: false, reason: 'onbekende_polsband' })
+
+      // Ticket verlopen
+      await testDb.query(`UPDATE tickets SET valid_from = now() - interval '2 days', valid_until = now() - interval '1 day' WHERE user_id = $1`, [user.id])
+      expect((await gate(user.tag)).body).toEqual({ allowed: false, reason: 'geen_ticket' })
+      expect((await gate(user.tag, 'uit')).body).toEqual({ allowed: true })
+
+      // Iemand van het team heeft geen ticket nodig
+      await testDb.query(`INSERT INTO festival_members (festival_id, user_id, role) VALUES ($1, $2, 'beveiliging')`, [FIRST_FESTIVAL, user.id])
+      expect((await gate(user.tag)).body).toEqual({ allowed: true })
+
+      await testDb.query(`INSERT INTO festival_blocks (festival_id, user_id, reason) VALUES ($1, $2, 'test')`, [FIRST_FESTIVAL, user.id])
+      expect((await gate(user.tag)).body).toEqual({ allowed: false, reason: 'geblokkeerd' })
+
+      const { rows } = await testDb.query('SELECT direction, allowed, reason FROM gate_scans WHERE user_id = $1 ORDER BY id', [user.id])
+      expect(rows.map((r) => r.reason)).toEqual([null, 'geen_ticket', null, null, 'geblokkeerd'])
+    })
+
+    it('check-in bij een podium geeft de drukte, wie doorloopt telt bij het nieuwe podium', async () => {
+      const a = await withBand('Checkin-A')
+      const b = await withBand('Checkin-B')
+      const stages = (await api('GET', '/stages', { token: a.accessToken })).body as { id: string }[]
+      const [one, two] = [stages[0]!.id, stages[1]!.id]
+      const checkin = (stageId: string, tag: string) => api('POST', '/iot/checkins', { headers: iot, body: { stageId, tag } })
+
+      const before = (await checkin(one, a.tag)).body.headCount as number
+      const res = await checkin(one, b.tag)
+      expect(res.status).toBe(200)
+      expect(res.body).toMatchObject({ stageId: one, headCount: before + 1, level: 'rustig' })
+      // Nog een keer tikken telt niet dubbel
+      expect((await checkin(one, b.tag)).body.headCount).toBe(before + 1)
+      // B loopt door naar het tweede podium
+      await checkin(two, b.tag)
+      expect((await checkin(one, a.tag)).body.headCount).toBe(before)
+
+      expect((await checkin(one, randomTag())).status).toBe(404)
+      expect((await checkin(crypto.randomUUID(), a.tag)).status).toBe(400)
+      const crowd = await api('GET', '/crowd', { token: a.accessToken })
+      expect(crowd.body.find((c: { stageId: string }) => c.stageId === one)).toMatchObject({ headCount: before })
+    })
+  })
+
   describe('rate limiting', () => {
     it('te veel inlogpogingen geeft 429 met Retry-After', async () => {
       let last: Res | undefined

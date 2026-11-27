@@ -30,7 +30,7 @@ info:
     De server stuurt berichten als JSON: `{ "type": "...", "data": { ... } }`. Types:
     `friend.location`, `friend.location.removed`, `friend.added`, `friend.removed`, `pin.created`, `pin.removed`,
     `chat.message`, `group.message`, `group.updated`, `group.removed`, `timetable.update`, `announcement`, `crowd.update`,
-    `map_point.update`, `map_point.removed`, `sos.update` (alleen personeel van het festival). De client stuurt alleen `ping`; alle wijzigingen
+    `map_point.update`, `map_point.removed`, `wallet.update` (alleen aan de eigenaar van het saldo), `sos.update` (alleen personeel van het festival). De client stuurt alleen `ping`; alle wijzigingen
     lopen via REST zodat autorisatie op één plek zit.
 
     **Fouten** hebben altijd de vorm van `Error` en lekken nooit stacktraces of SQL.
@@ -76,6 +76,8 @@ tags:
     description: Festivals, tickets, het team per festival en de eigenaren
   - name: admin
     description: Beheerportal (alleen personeel van het festival)
+  - name: wallet
+    description: NFC-polsband koppelen, saldo en betalingen
   - name: iot
     description: Endpoints voor sensoren
   - name: system
@@ -2118,6 +2120,71 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  # ---------------------------------------------------------------- wallet
+  /me/wallet:
+    get:
+      tags: [wallet]
+      operationId: getWallet
+      summary: Mijn saldo, polsband en laatste betalingen bij dit festival
+      responses:
+        '200':
+          description: Saldo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wallet' }
+              example:
+                balanceCents: 1250
+                wristband: { linkedAt: '2026-06-20T12:00:00Z', blocked: false }
+                transactions:
+                  - id: 6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                    kind: betaling
+                    amountCents: 450
+                    balanceAfter: 1250
+                    offline: false
+                    occurredAt: '2026-06-20T21:10:00Z'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /me/wristband:
+    post:
+      tags: [wallet]
+      operationId: linkWristband
+      summary: Een NFC-polsband aan mijn account koppelen
+      description: |
+        Koppelt de polsband aan het account, voor het festival van dit verzoek. Had het account al een
+        polsband, dan wordt die oude geblokkeerd (kwijt of kapot); het saldo blijft. Een polsband van
+        iemand anders of een geblokkeerde polsband kun je niet koppelen. Rate limit: 5 per minuut.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WristbandLink' }
+      responses:
+        '200':
+          description: Gekoppeld
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wallet' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Deze polsband is al van iemand anders
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /me/wristband/block:
+    post:
+      tags: [wallet]
+      operationId: blockWristband
+      summary: Mijn polsband blokkeren (kwijt)
+      description: Daarna werkt de polsband niet meer bij de terminals. Het saldo blijft staan voor een nieuwe polsband.
+      responses:
+        '204': { description: Geblokkeerd }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # ---------------------------------------------------------------- iot
   /iot/crowd-readings:
     post:
@@ -2133,6 +2200,149 @@ paths:
             schema: { $ref: '#/components/schemas/CrowdReadingInput' }
       responses:
         '202': { description: Meting ontvangen }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /iot/payments:
+    post:
+      tags: [iot]
+      operationId: postPayment
+      summary: Terminal bij een bar of foodtruck schrijft een bedrag af
+      description: |
+        De terminal kiest zelf de `id` (UUID). Stuurt hij dezelfde betaling nog een keer (bijv. omdat het
+        antwoord niet aankwam), dan krijgt hij hetzelfde antwoord en wordt er niet twee keer afgeschreven.
+        `offline: true` = de terminal had geen verbinding en heeft de betaling al goedgekeurd. Dat mag tot
+        €10 (1000 cent); het saldo kan dan onder nul komen. Online is het saldo te laag: 402.
+      security:
+        - iotKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentInput' }
+      responses:
+        '200':
+          description: Afgeschreven (of al eerder afgeschreven)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402':
+          description: Saldo te laag
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: insufficient_balance, message: Saldo te laag. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Deze id is al gebruikt voor een andere betaling
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /iot/topups:
+    post:
+      tags: [iot]
+      operationId: postTopup
+      summary: Opwaardeerpunt zet geld op het saldo
+      description: Werkt net als `/iot/payments`, maar telt het bedrag op. Maximaal €200 per keer.
+      security:
+        - iotKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TopupInput' }
+      responses:
+        '200':
+          description: Opgewaardeerd (of al eerder opgewaardeerd)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Deze id is al gebruikt voor een andere opwaardering
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /iot/blocked-tags:
+    get:
+      tags: [iot]
+      operationId: getBlockedTags
+      summary: Geblokkeerde polsbanden, voor als de terminal offline is
+      description: De terminal haalt deze lijst regelmatig op. Je krijgt alleen hashes (SHA-256 van de UID in hoofdletters), nooit de UID zelf.
+      security:
+        - iotKey: []
+      parameters:
+        - name: festivalId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Lijst met hashes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BlockedTags' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /iot/checkins:
+    post:
+      tags: [iot]
+      operationId: postCheckin
+      summary: Bezoeker tikt de polsband op de paal bij een podium
+      description: |
+        De drukte bij een podium = het aantal polsbanden dat in de laatste 30 minuten als laatste bij dit podium
+        heeft getikt. De backend slaat dat op als meting (net als `/iot/crowd-readings`) en stuurt `crowd.update`.
+      security:
+        - iotKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckinInput' }
+      responses:
+        '200':
+          description: Ingecheckt; de nieuwe drukte van dit podium
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CrowdLevel' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /iot/gate-scans:
+    post:
+      tags: [iot]
+      operationId: postGateScan
+      summary: Poortje bij de ingang of uitgang scant een polsband
+      description: |
+        Naar binnen mag als de polsband bij een account hoort dat een gekoppeld, nu geldig ticket heeft (of in het
+        team van het festival zit), en als polsband en account niet geblokkeerd zijn. Naar buiten mag altijd
+        met een bekende polsband. Elke scan wordt opgeslagen. Het antwoord is altijd 200 met `allowed`.
+      security:
+        - iotKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GateScanInput' }
+      responses:
+        '200':
+          description: Mag wel of niet door
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GateScanResult' }
+              example: { allowed: false, reason: geen_ticket }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
@@ -2237,7 +2447,7 @@ components:
         error:
           type: string
           description: Vaste code voor de app
-          enum: [validation_failed, unauthorized, forbidden, not_found, conflict, rate_limited, internal]
+          enum: [validation_failed, unauthorized, forbidden, not_found, conflict, insufficient_balance, rate_limited, internal]
         message:
           type: string
           maxLength: 300
@@ -2950,6 +3160,112 @@ components:
         stageId: { type: string, format: uuid }
         headCount: { type: integer, minimum: 0, maximum: 200000 }
         measuredAt: { type: string, format: date-time }
+
+    # --- wallet
+    NfcTag:
+      type: string
+      description: UID van de NFC-polsband als hex, 4 tot 10 bytes (bijv. `04A1B2C3D4E5F6`)
+      pattern: '^([0-9A-Fa-f]{2}){4,10}$'
+    WristbandLink:
+      type: object
+      additionalProperties: false
+      required: [tag]
+      properties:
+        tag: { $ref: '#/components/schemas/NfcTag' }
+    WalletTransaction:
+      type: object
+      x-table: wallet_transactions
+      additionalProperties: false
+      required: [id, kind, amountCents, balanceAfter, offline, occurredAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [betaling, opwaardering] }
+        amountCents: { type: integer, minimum: 1 }
+        balanceAfter: { type: integer }
+        offline: { type: boolean }
+        occurredAt: { type: string, format: date-time }
+    Wallet:
+      type: object
+      additionalProperties: false
+      required: [balanceCents, wristband, transactions]
+      properties:
+        balanceCents: { type: integer, description: Saldo in centen. Kan na een offline betaling onder nul zijn. }
+        wristband:
+          description: De actieve polsband, of null als er geen is
+          oneOf:
+            - type: 'null'
+            - type: object
+              additionalProperties: false
+              required: [linkedAt, blocked]
+              properties:
+                linkedAt: { type: string, format: date-time }
+                blocked: { type: boolean }
+        transactions:
+          type: array
+          maxItems: 20
+          description: De laatste 20, nieuwste eerst
+          items: { $ref: '#/components/schemas/WalletTransaction' }
+    PaymentInput:
+      type: object
+      additionalProperties: false
+      required: [id, festivalId, tag, amountCents]
+      properties:
+        id: { type: string, format: uuid, description: Gekozen door de terminal }
+        festivalId: { type: string, format: uuid }
+        tag: { $ref: '#/components/schemas/NfcTag' }
+        amountCents: { type: integer, minimum: 1, maximum: 50000 }
+        occurredAt: { type: string, format: date-time, description: 'Alleen nodig bij een offline betaling' }
+        offline: { type: boolean, default: false }
+    TopupInput:
+      type: object
+      additionalProperties: false
+      required: [id, festivalId, tag, amountCents]
+      properties:
+        id: { type: string, format: uuid, description: Gekozen door de terminal }
+        festivalId: { type: string, format: uuid }
+        tag: { $ref: '#/components/schemas/NfcTag' }
+        amountCents: { type: integer, minimum: 1, maximum: 20000 }
+    PaymentResult:
+      type: object
+      additionalProperties: false
+      required: [transactionId, balanceCents]
+      properties:
+        transactionId: { type: string, format: uuid }
+        balanceCents: { type: integer, description: Saldo na deze betaling }
+    BlockedTags:
+      type: object
+      additionalProperties: false
+      required: [tagHashes]
+      properties:
+        tagHashes:
+          type: array
+          maxItems: 100000
+          items: { type: string, pattern: '^[0-9a-f]{64}$' }
+    CheckinInput:
+      type: object
+      additionalProperties: false
+      required: [stageId, tag]
+      properties:
+        stageId: { type: string, format: uuid }
+        tag: { $ref: '#/components/schemas/NfcTag' }
+    GateScanInput:
+      type: object
+      additionalProperties: false
+      required: [festivalId, tag, direction]
+      properties:
+        festivalId: { type: string, format: uuid }
+        tag: { $ref: '#/components/schemas/NfcTag' }
+        direction: { type: string, enum: [in, uit] }
+    GateScanResult:
+      type: object
+      additionalProperties: false
+      required: [allowed]
+      properties:
+        allowed: { type: boolean }
+        reason:
+          type: string
+          description: Alleen als `allowed` false is
+          enum: [onbekende_polsband, polsband_geblokkeerd, geblokkeerd, geen_ticket]
 
     # --- notifications
     PushSubscription:
