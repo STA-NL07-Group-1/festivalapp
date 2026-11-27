@@ -123,6 +123,26 @@ console in het Educloud-portaal en haal het bestand weg (`sudo rm` + `sudo netpl
 Schakel de controle van het certificaat nooit uit (`insecure-registries`): dan haal je mogelijk
 images van een onbekende server binnen.
 
+## Testfestival voor de testweek
+
+`backend/scripts/testfestival.ts` maakt het festival *Festival Buddy Testweek* aan: van vandaag tot en
+met 9 december 2026, 22:00. Met podia, een timetable voor elke dag (workshops met aanmelding en een paar
+vertraagde, verplaatste en geannuleerde optredens), kaartpunten, huisregels, vragen en 50 ticketcodes.
+Het personeel van het oude Testfestival krijgt dezelfde rol. Alles is verzonnen en gaat er later weer uit.
+
+```bash
+cd ~/festivalapp
+sudo systemctl start festivalapp-backup.service
+sudo docker compose -f compose.prod.yaml --env-file .env.production exec backend node scripts/testfestival.ts --toevoegen
+sudo docker compose -f compose.prod.yaml --env-file .env.production exec backend node scripts/testfestival.ts --oud-verwijderen
+sudo docker compose -f compose.prod.yaml --env-file .env.production exec backend node scripts/testfestival.ts --oud-verwijderen --zeker
+```
+
+- `--toevoegen` laat de ticketcodes één keer zien. Bewaar ze: in de database staat alleen een hash.
+- `--oud-verwijderen` laat eerst zien wat er bij het oude Testfestival staat. Pas met `--zeker` gaat het
+  echt weg. Accounts, vrienden en chats blijven; bezoekers voeren daarna een nieuwe ticketcode in.
+- Na de testweek: `... node scripts/testfestival.ts --verwijderen` haalt het testfestival met alles erop weer weg.
+
 ## Vertaler (LibreTranslate)
 
 De container `translate` vertaalt mededelingen, huisregels en veelgestelde vragen tussen Nederlands en
