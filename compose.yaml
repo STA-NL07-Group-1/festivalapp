@@ -16,5 +16,17 @@ services:
       interval: 5s
       retries: 10
 
+  # Vertaler (optioneel): docker compose --profile vertalen up -d translate
+  translate:
+    image: libretranslate/libretranslate:v1.9.6
+    profiles: [vertalen]
+    environment:
+      LT_LOAD_ONLY: nl,en
+    ports:
+      - '127.0.0.1:5000:5000'
+    volumes:
+      - translate-models:/home/libretranslate/.local
+
 volumes:
   pgdata:
+  translate-models:

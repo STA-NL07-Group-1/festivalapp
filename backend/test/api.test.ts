@@ -15,6 +15,7 @@ import type { Mail } from '../src/mail.ts'
 import { createPush, pushSubscriptionsFor, type Push, type PushKind, type PushMessage } from '../src/push.ts'
 import { attachRealtime } from '../src/realtime.ts'
 import { sha256 } from '../src/security.ts'
+import type { Translator } from '../src/translate.ts'
 import { REMINDER_MINUTES, sendShowReminders } from '../src/reminders.ts'
 import { migrate } from '../scripts/migrate.ts'
 import { DEMO_PASSWORD, FIRST_FESTIVAL, SECOND_FESTIVAL, seed } from '../scripts/seed.ts'
@@ -30,6 +31,21 @@ const mailbox: Mail[] = []
 const pushes: { userIds: string[]; message: PushMessage; kind?: PushKind }[] = []
 let testDb: ReturnType<typeof createPool>
 let testPush: Push
+
+/**
+ * Nep-vertaler: geen LibreTranslate nodig in tests. Herkent Engels aan een paar woorden, anders de taal van
+ * het account, en "vertaalt" door de andere taal ervoor te zetten (EN: … / NL: …).
+ */
+const fakeTranslator: Translator = {
+  enabled: true,
+  async translate(texts, fallback) {
+    const source = /\b(the|please|is|no)\b/i.test(texts.join(' ')) ? 'en' : fallback
+    const translated = texts.map((t) => (t ? `${source === 'nl' ? 'EN' : 'NL'}: ${t}` : t))
+    return source === 'nl'
+      ? { nl: texts, en: translated, source, failed: false }
+      : { nl: translated, en: texts, source, failed: false }
+  },
+}
 
 /** De token uit de link in de laatste mail aan dit adres (?verify= of ?reset=) */
 function linkToken(to: string, param: 'verify' | 'reset'): string {
@@ -67,7 +83,7 @@ beforeAll(async () => {
       pushes.push({ userIds, message, kind })
     },
   }
-  const { handler, deps } = createApp({ db, config, push: testPush, mailer })
+  const { handler, deps } = createApp({ db, config, push: testPush, mailer, translator: fakeTranslator })
   const server = createHttpServer(handler)
   deps.realtime = attachRealtime(server, {
     corsOrigins: config.corsOrigins,
@@ -560,6 +576,28 @@ describe.skipIf(!databaseUrl)('backend', () => {
       expect((await api('GET', '/announcements', { token: visitor.accessToken })).body[0].titleNl).toBe('Onweer')
     })
 
+    it('mededeling in één taal wordt vertaald, en de pushmelding gaat in de taal van de ontvanger', async () => {
+      const org = await login('organisatie@festival.test')
+      const res = await api('POST', '/admin/announcements', {
+        token: org.accessToken,
+        body: { level: 'waarschuwing', title: 'Lange rij bij de ingang', body: 'Kom wat later.' },
+      })
+      expect(res.status).toBe(201)
+      expect(res.body).toMatchObject({
+        titleNl: 'Lange rij bij de ingang',
+        titleEn: 'EN: Lange rij bij de ingang',
+        bodyEn: 'EN: Kom wat later.',
+        translationFailed: false,
+      })
+      const push = pushes.find((p) => p.message.tag === `announcement-${res.body.id}`)
+      expect(push?.message).toMatchObject({
+        title: { nl: 'Lange rij bij de ingang', en: 'EN: Lange rij bij de ingang' },
+        body: { nl: 'Kom wat later.', en: 'EN: Kom wat later.' },
+      })
+      // Titel zonder tekst: geweigerd
+      expect((await api('POST', '/admin/announcements', { token: org.accessToken, body: { level: 'info', title: 'Alleen titel' } })).status).toBe(400)
+    })
+
     it('WebSocket zonder geldig ticket wordt geweigerd, en een ticket werkt maar één keer', async () => {
       const refused = (url: string) =>
         new Promise((resolve) => new WebSocket(url).on('unexpected-response', (_req, res) => resolve(res.statusCode)))
@@ -628,7 +666,8 @@ describe.skipIf(!databaseUrl)('backend', () => {
       expect(await sendShowReminders(testDb, testPush)).toBeGreaterThanOrEqual(1)
       expect(sent()).toHaveLength(1)
       expect(sent()[0]!).toMatchObject({ kind: 'timetable', userIds: [visitorId] })
-      expect(sent()[0]!.message.body).toMatch(/^Begint over (9|10) minuten bij /)
+      expect(sent()[0]!.message.body).toMatchObject({ nl: expect.stringMatching(/^Begint over (9|10) minuten bij /) })
+      expect(sent()[0]!.message.body).toMatchObject({ en: expect.stringMatching(/^Starts in (9|10) minutes at /) })
 
       await sendShowReminders(testDb, testPush)
       expect(sent()).toHaveLength(1)
@@ -1013,9 +1052,35 @@ describe.skipIf(!databaseUrl)('backend', () => {
 
       const rules = { houseRulesNl: 'Geen glas.', houseRulesEn: 'No glass.' }
       expect((await api('PUT', '/admin/house-rules', { token: ehbo.accessToken, body: rules })).status).toBe(403)
-      expect((await api('PUT', '/admin/house-rules', { token: org.accessToken, body: rules })).status).toBe(204)
+      expect((await api('PUT', '/admin/house-rules', { token: org.accessToken, body: rules })).status).toBe(200)
       const info = await api('GET', '/festival-info', { token: ehbo.accessToken })
       expect(info.body.houseRulesNl).toBe('Geen glas.')
+    })
+
+    it('één veld in het portal: de taal wordt herkend en vertaald, en de vertaling is te verbeteren', async () => {
+      const org = await login('organisatie@festival.test')
+      // Nederlands (de taal van het account van de organisatie)
+      const rules = await api('PUT', '/admin/house-rules', { token: org.accessToken, body: { houseRules: 'Geen glas op het terrein.' } })
+      expect(rules.status).toBe(200)
+      expect(rules.body).toEqual({ houseRulesNl: 'Geen glas op het terrein.', houseRulesEn: 'EN: Geen glas op het terrein.', translationFailed: false })
+      // Verbeterde vertaling: zo opgeslagen
+      const fixed = await api('PUT', '/admin/house-rules', {
+        token: org.accessToken,
+        body: { houseRulesNl: 'Geen glas op het terrein.', houseRulesEn: 'No glass on site.' },
+      })
+      expect(fixed.body.houseRulesEn).toBe('No glass on site.')
+      expect((await api('GET', '/festival-info', { token: org.accessToken })).body.houseRulesEn).toBe('No glass on site.')
+
+      // Engels wordt herkend, ook al staat het account in het Nederlands
+      const faq = await api('POST', '/admin/faq', { token: org.accessToken, body: { question: 'Is there wifi?', answer: 'Yes, at the gate.' } })
+      expect(faq.status).toBe(201)
+      expect(faq.body).toMatchObject({ questionEn: 'Is there wifi?', questionNl: 'NL: Is there wifi?', answerNl: 'NL: Yes, at the gate.', translationFailed: false })
+      // Alleen het antwoord gewijzigd: alleen dat wordt opnieuw vertaald
+      const changed = await api('PATCH', `/admin/faq/${faq.body.id}`, { token: org.accessToken, body: { answer: 'Overal op het terrein.' } })
+      expect(changed.body).toMatchObject({ questionEn: 'Is there wifi?', answerNl: 'Overal op het terrein.', answerEn: 'EN: Overal op het terrein.' })
+      // Niet één van beide vormen: geweigerd
+      expect((await api('POST', '/admin/faq', { token: org.accessToken, body: { question: 'Alleen een vraag' } })).status).toBe(400)
+      await api('DELETE', `/admin/faq/${faq.body.id}`, { token: org.accessToken })
     })
 
     it('de assistent gebruikt de vragen van het festival', async () => {
@@ -1294,6 +1359,69 @@ describe.skipIf(!databaseUrl)('backend', () => {
       // Een foto uit een gesprek tussen twee vrienden hoort niet in de groep
       const pairPhoto = await api('POST', '/photos', { token: a.accessToken, body: { image: png.toString('base64'), friendId: b.id } })
       expect((await api('POST', `/groups/${groupId}/messages`, { token: a.accessToken, body: { photoId: pairPhoto.body.id } })).status).toBe(404)
+    })
+
+    it('dempen: geen pushmelding van een gedempt gesprek of een gedempte groep, wel ongelezen', async () => {
+      const a = await register('DempAda')
+      const b = await register('DempBen')
+      await befriend(a, b)
+      const chatPushes = () => pushes.filter((p) => p.message.tag === `chat-${a.id}`).length
+
+      const muted = await api('PUT', `/friends/${a.id}/mute`, { token: b.accessToken, body: { duration: '1h' } })
+      expect(muted.status).toBe(200)
+      expect(Date.parse(muted.body.mutedUntil) - Date.now()).toBeGreaterThan(55 * 60_000)
+      expect((await api('GET', '/friends', { token: b.accessToken })).body[0]).toMatchObject({ id: a.id, mutedUntil: muted.body.mutedUntil })
+      await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { body: 'Stil?' } })
+      expect(chatPushes()).toBe(0)
+      // Wel ongelezen
+      expect((await api('GET', '/friends', { token: b.accessToken })).body[0].unread).toBe(1)
+
+      // Weer aan: wel een melding, met het aantal ongelezen voor het app-icoon
+      expect((await api('PUT', `/friends/${a.id}/mute`, { token: b.accessToken, body: { duration: 'off' } })).body).toEqual({ mutedUntil: null })
+      await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { body: 'Nu wel' } })
+      expect(chatPushes()).toBe(1)
+      expect(pushes.at(-1)?.message).toMatchObject({ withUnread: true, body: { nl: 'Stuurde je een bericht', en: 'Sent you a message' } })
+      expect((await api('GET', '/me/unread', { token: b.accessToken })).body).toEqual({ total: 2 })
+      expect((await api('POST', `/messages/${a.id}/read`, { token: b.accessToken })).status).toBe(204)
+      expect((await api('GET', '/me/unread', { token: b.accessToken })).body).toEqual({ total: 0 })
+
+      // Groep altijd dempen
+      const groupId = (await api('POST', '/groups', { token: a.accessToken, body: { name: 'Stilte', memberIds: [b.id] } })).body.id as string
+      const always = await api('PUT', `/groups/${groupId}/mute`, { token: b.accessToken, body: { duration: 'always' } })
+      expect(always.body.mutedUntil).toMatch(/^9999-/)
+      expect((await api('GET', `/groups/${groupId}`, { token: b.accessToken })).body.mutedUntil).toMatch(/^9999-/)
+      expect((await api('GET', `/groups/${groupId}`, { token: a.accessToken })).body.mutedUntil).toBeNull()
+      await api('POST', `/groups/${groupId}/messages`, { token: a.accessToken, body: { body: 'Hallo groep' } })
+      expect(pushes.filter((p) => p.message.tag === `group-${groupId}`)).toHaveLength(0)
+      expect((await api('GET', '/me/unread', { token: b.accessToken })).body).toEqual({ total: 1 })
+      expect((await api('POST', `/groups/${groupId}/read`, { token: b.accessToken })).status).toBe(204)
+      expect((await api('GET', '/me/unread', { token: b.accessToken })).body).toEqual({ total: 0 })
+      // Geen lid of geen vriend: 404
+      const stranger = await register('DempCor')
+      expect((await api('PUT', `/groups/${groupId}/mute`, { token: stranger.accessToken, body: { duration: '24h' } })).status).toBe(404)
+      expect((await api('PUT', `/friends/${a.id}/mute`, { token: stranger.accessToken, body: { duration: '24h' } })).status).toBe(404)
+      expect((await api('PUT', `/friends/${a.id}/mute`, { token: b.accessToken, body: { duration: '2h' } })).status).toBe(400)
+    })
+
+    it('pushmelding alleen als de app niet in beeld is', async () => {
+      const a = await register('ZichtAnne')
+      const b = await register('ZichtBob')
+      await befriend(a, b)
+      const chatPushes = () => pushes.filter((p) => p.message.tag === `chat-${a.id}`).length
+      const ws = new WebSocket(await wsUrl(b.accessToken))
+      await new Promise((resolve) => ws.on('open', resolve))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      // App in beeld: de app laat het bericht zelf zien, geen pushmelding
+      await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { body: 'Zie je dit?' } })
+      expect(chatPushes()).toBe(0)
+
+      // Naar de achtergrond (verbinding staat nog open): wel een pushmelding
+      ws.send(JSON.stringify({ type: 'visibility', data: { visible: false } }))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await api('POST', `/messages/${b.id}`, { token: a.accessToken, body: { body: 'En nu?' } })
+      expect(chatPushes()).toBe(1)
+      ws.close()
     })
 
     it('leden beheren: alleen de beheerder voegt toe of verwijdert, verlaten kan iedereen', async () => {

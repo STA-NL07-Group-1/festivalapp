@@ -35,8 +35,26 @@ services:
       CORS_ORIGINS: https://${DOMAIN:?zet DOMAIN in .env.production}
       APP_URL: https://${DOMAIN}
       TRUST_PROXY: cloudflare
+      # Automatisch vertalen (zie de service translate hieronder). Start de backend zonder vertaler,
+      # dan gaan mededelingen gewoon in de originele taal.
+      TRANSLATE_URL: http://translate:5000
     read_only: true
     tmpfs: [/tmp]
+    security_opt: ['no-new-privileges:true']
+
+  translate:
+    # LibreTranslate: open source vertaler die hier op de eigen server draait, zodat teksten niet naar een
+    # externe dienst gaan. Alleen Nederlands en Engels (minder geheugen). De eerste start downloadt de
+    # taalmodellen (een paar minuten); die blijven bewaard in het volume.
+    image: libretranslate/libretranslate:v1.9.6
+    restart: unless-stopped
+    environment:
+      LT_LOAD_ONLY: nl,en
+      LT_DISABLE_WEB_UI: 'true'
+      LT_UPDATE_MODELS: 'false'
+    volumes:
+      - translate-models:/home/libretranslate/.local
+    # Geen poorten naar buiten: alleen de backend kan erbij
     security_opt: ['no-new-privileges:true']
 
   web:
@@ -63,3 +81,4 @@ services:
 
 volumes:
   pgdata:
+  translate-models:

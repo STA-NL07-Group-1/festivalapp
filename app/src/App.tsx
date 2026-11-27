@@ -1,12 +1,15 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import { api, type Announcement, type Friend, type Group } from './api/client'
+import { api, type Announcement, type Friend, type Group, type Message } from './api/client'
 import { FestivalBar, NoFestivalScreen } from './components/festival'
+import { MessageToast, type IncomingToast } from './components/MessageToast'
 import { Toast } from './components/ui'
 import { BellIcon, CalendarIcon, MapIcon, MenuIcon, UsersIcon } from './components/icons'
 import { useI18n } from './i18n'
+import { isMuted } from './lib/mute'
 import { flushOutbox, useOutbox } from './lib/outbox'
+import { refreshUnread, useUnreadTotal } from './lib/unread'
 import { syncPush } from './lib/push'
 import { festivalKey } from './lib/offlineStore'
 import { useOfflineAsync } from './lib/useAsync'
@@ -27,16 +30,28 @@ const FESTIVAL_TABS: Tab[] = ['kaart', 'timetable', 'meldingen']
 const DISMISSED_KEY = 'festivalapp.dismissedEmergencies'
 const OUTBOX_RETRY_MS = 15_000
 
-/** Leest deep links: ?vriend=CODE (QR), ?tab=…, ?chat=<userId> en ?group=<groupId> (pushmelding) */
-function readDeepLink() {
-  const params = new URLSearchParams(window.location.search)
+interface DeepLink {
+  friendCode: string | null
+  chatWith: string | null
+  groupId: string | null
+  tab: Tab | null
+}
+
+/** Deep link uit een adres: ?vriend=CODE (QR), ?tab=…, ?chat=<userId> en ?group=<groupId> (pushmelding) */
+function parseLink(search: string): DeepLink {
+  const params = new URLSearchParams(search)
   const tab = params.get('tab')
-  const link = {
+  return {
     friendCode: params.get('vriend'),
     chatWith: params.get('chat'),
     groupId: params.get('group'),
     tab: TABS.includes(tab as Tab) ? (tab as Tab) : null,
   }
+}
+
+/** Deep link waarmee de app is geopend; daarna meteen uit de adresbalk */
+function readDeepLink(): DeepLink {
+  const link = parseLink(window.location.search)
   if (window.location.search) window.history.replaceState(null, '', window.location.pathname)
   return link
 }
@@ -102,7 +117,7 @@ function UpdatePrompt() {
 
 function Shell() {
   const { t, locale } = useI18n()
-  const { online, live, festival } = useSession()
+  const { online, live, festival, me } = useSession()
   const festivalId = festival?.id ?? null
   const [deepLink] = useState(readDeepLink)
   const [tab, setTab] = useState<Tab>(deepLink.friendCode ? 'vrienden' : (deepLink.tab ?? 'kaart'))
@@ -111,6 +126,9 @@ function Shell() {
   const [timetableFriend, setTimetableFriend] = useState<string | null>(null)
   const [dismissed, setDismissed] = useState<string[]>(readDismissed)
   const [unread, setUnread] = useState(0)
+  // Ongelezen chatberichten (getal op het app-icoon en bij Vrienden)
+  const unreadChats = useUnreadTotal()
+  const [incoming, setIncoming] = useState<IncomingToast | null>(null)
 
   // Mededelingen van het gekozen festival; opnieuw ophalen als je van festival wisselt
   // Ook op de telefoon bewaard, zodat je een noodbericht zonder bereik nog kunt teruglezen
@@ -155,21 +173,85 @@ function Shell() {
     void syncPush().catch(() => {})
   }, [])
 
-  // Chat openen vanuit een pushmelding
+  // Een gesprek of tabblad openen vanuit een pushmelding: bij het starten van de app (deep link in de URL)
+  // of als de app al open was (bericht van de service worker, zie sw.ts). Dan hoeft de app niet opnieuw te laden.
+  const openConversation = useCallback((link: DeepLink) => {
+    if (link.chatWith) {
+      void api.get<Friend[]>('/friends').then((friends) => {
+        const friend = friends.find((f) => f.id === link.chatWith)
+        if (friend) withTransition(() => setChatWith({ type: 'friend', friend }))
+      })
+    } else if (link.groupId) {
+      void api.get<Group[]>('/groups').then((groups) => {
+        const group = groups.find((g) => g.id === link.groupId)
+        if (group) withTransition(() => setChatWith({ type: 'group', group }))
+      })
+    }
+  }, [])
+  const openLink = useCallback(
+    (link: DeepLink) => {
+      if (link.chatWith || link.groupId) return openConversation(link)
+      if (!link.tab) return
+      const next = link.tab
+      if (next === 'meldingen') setUnread(0)
+      withTransition(() => {
+        setChatWith(null)
+        setTab(next)
+      })
+    },
+    [openConversation],
+  )
+  useEffect(() => openConversation(deepLink), [deepLink, openConversation])
   useEffect(() => {
-    if (!deepLink.chatWith) return
-    void api.get<Friend[]>('/friends').then((friends) => {
-      const friend = friends.find((f) => f.id === deepLink.chatWith)
-      if (friend) setChatWith({ type: 'friend', friend })
-    })
-  }, [deepLink.chatWith])
+    const sw = navigator.serviceWorker
+    if (!sw) return
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; url?: string } | null
+      if (data?.type !== 'open' || !data.url) return
+      openLink(parseLink(new URL(data.url, window.location.origin).search))
+    }
+    sw.addEventListener('message', onMessage)
+    sw.startMessages()
+    return () => sw.removeEventListener('message', onMessage)
+  }, [openLink])
+
+  // Ongelezen berichten: bij het starten, als je de app weer opent en bij elk nieuw bericht
   useEffect(() => {
-    if (!deepLink.groupId) return
-    void api.get<Group[]>('/groups').then((groups) => {
-      const group = groups.find((g) => g.id === deepLink.groupId)
-      if (group) setChatWith({ type: 'group', group })
-    })
-  }, [deepLink.groupId])
+    refreshUnread()
+    const onVisible = () => document.visibilityState === 'visible' && refreshUnread()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // Bericht uit een ander gesprek terwijl de app open is: een melding bovenin (de server stuurt dan geen push).
+  // Niet voor je eigen berichten, niet voor het gesprek dat al open staat en niet voor een gedempt gesprek.
+  const openId = chatWith ? (chatWith.type === 'friend' ? chatWith.friend.id : chatWith.group.id) : null
+  const onIncoming = useCallback(
+    (m: Message) => {
+      refreshUnread()
+      if (m.senderId === me?.id || m.kind === 'systeem') return
+      const body = m.kind === 'foto' ? t('chat.newMedia') : (m.body ?? t('chat.newMessage'))
+      if (m.groupId) {
+        if (m.groupId === openId) return
+        void api.get<Group[]>('/groups').then((groups) => {
+          const group = groups.find((g) => g.id === m.groupId)
+          if (!group || isMuted(group.mutedUntil)) return
+          setIncoming({ id: m.id, title: group.name, body, group: true, open: () => openLink(parseLink(`?group=${group.id}`)) })
+        })
+      } else {
+        if (m.senderId === openId) return
+        void api.get<Friend[]>('/friends').then((friends) => {
+          const friend = friends.find((f) => f.id === m.senderId)
+          if (!friend || isMuted(friend.mutedUntil)) return
+          setIncoming({ id: m.id, title: friend.displayName, body, group: false, open: () => openLink(parseLink(`?chat=${friend.id}`)) })
+        })
+      }
+    },
+    [me?.id, openId, openLink, t],
+  )
+  useRealtime<Message>('chat.message', onIncoming)
+  useRealtime<Message>('group.message', onIncoming)
+  const hideIncoming = useCallback(() => setIncoming(null), [])
 
   const emergency = announcements.data?.find((a) => a.level === 'nood' && !dismissed.includes(a.id))
   const dismiss = (id: string) => {
@@ -226,6 +308,8 @@ function Shell() {
         </div>
       )}
 
+      <MessageToast key={incoming?.id} toast={incoming} onDone={hideIncoming} />
+
       {!chatWith && FESTIVAL_TABS.includes(tab) && <FestivalBar />}
 
       <main className="content">
@@ -269,6 +353,11 @@ function Shell() {
               {id === 'meldingen' && unread > 0 && (
                 <span className="tab-badge" aria-label={`${unread}`}>
                   {unread}
+                </span>
+              )}
+              {id === 'vrienden' && unreadChats > 0 && (
+                <span className="tab-badge" aria-label={t('friends.unread', { count: unreadChats })}>
+                  {unreadChats > 99 ? '99+' : unreadChats}
                 </span>
               )}
             </button>

@@ -35,6 +35,7 @@ server.listen(config.port, () => {
   console.log(`Festivalapp-API draait op http://localhost:${config.port} (${config.env})`)
   if (!push.enabled) console.log('  Pushmeldingen staan uit: zet VAPID_PUBLIC_KEY en VAPID_PRIVATE_KEY in .env')
   if (!config.ai) console.log('  Chatbot gebruikt de ingebouwde FAQ: zet AI_API_KEY in .env voor een taalmodel')
+  if (!deps.translator.enabled) console.log('  Mededelingen en info worden niet vertaald: zet TRANSLATE_URL in .env')
   if (!deps.mailer.enabled) console.log('  Mails komen alleen in de log: zet RESEND_API_KEY in .env om ze echt te versturen')
 })
 

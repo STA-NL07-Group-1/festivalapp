@@ -21,6 +21,7 @@ import { createMailer, type Mailer } from './mail.ts'
 import type { Push } from './push.ts'
 import { noRealtime, type Realtime } from './realtime.ts'
 import { createTicketStore, type TicketStore } from './wsTickets.ts'
+import { createTranslator, type Translator } from './translate.ts'
 import { sha256, verifyAccessToken } from './security.ts'
 import { knownOperation, validateBody } from './validation.ts'
 import { registerRoutes } from './routes/index.ts'
@@ -35,6 +36,8 @@ export interface Deps {
   limiter: RateLimiter
   /** Eenmalige tickets voor /ws (zie wsTickets.ts) */
   wsTickets: TicketStore
+  /** Automatisch vertalen tussen Nederlands en Engels (zie translate.ts) */
+  translator: Translator
 }
 
 function clientIp(req: IncomingMessage): string {
@@ -53,10 +56,12 @@ function clientIp(req: IncomingMessage): string {
 }
 
 export function createApp(
-  deps: Omit<Deps, 'realtime' | 'limiter' | 'mailer' | 'wsTickets'> & Partial<Pick<Deps, 'realtime' | 'limiter' | 'mailer' | 'wsTickets'>>,
+  deps: Omit<Deps, 'realtime' | 'limiter' | 'mailer' | 'wsTickets' | 'translator'> &
+    Partial<Pick<Deps, 'realtime' | 'limiter' | 'mailer' | 'wsTickets' | 'translator'>>,
 ) {
   const fullDeps: Deps = {
     realtime: noRealtime,
+    translator: createTranslator(deps.config.translate?.url ?? null, deps.config.translate?.apiKey ?? null),
     limiter: new RateLimiter(),
     mailer: createMailer(deps.config.mail),
     wsTickets: createTicketStore(),

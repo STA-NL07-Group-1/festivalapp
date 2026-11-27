@@ -6,6 +6,7 @@ import type { Deps } from '../app.ts'
 import { areFriends, audit, transaction, type Queryable } from '../db.ts'
 import { badRequest, forbidden, notFound, requireUser, uuidParam, type Router } from '../http.ts'
 import { MESSAGE_SELECT, saveMessage, saveSystemMessage } from '../messages.ts'
+import { muteUntil, mutedUntilJson, type MuteDuration } from '../mutes.ts'
 import { toMessage } from './mappers.ts'
 
 /** Meer mensen in één groep wordt onoverzichtelijk in de app (en elke melding gaat naar iedereen) */
@@ -47,8 +48,8 @@ async function groupDetail(db: Queryable, groupId: string, viewerId: string) {
   )
   const group = rows[0]
   if (!group) throw notFound()
-  const members = await db.query<{ id: string; display_name: string; role: Role; joined_at: Date }>(
-    `SELECT u.id, u.display_name, gm.role, gm.joined_at
+  const members = await db.query<{ id: string; display_name: string; role: Role; joined_at: Date; muted_until: Date | null }>(
+    `SELECT u.id, u.display_name, gm.role, gm.joined_at, gm.muted_until
        FROM group_members gm JOIN users u ON u.id = gm.user_id
       WHERE gm.group_id = $1
       ORDER BY gm.role, lower(u.display_name)`,
@@ -61,6 +62,8 @@ async function groupDetail(db: Queryable, groupId: string, viewerId: string) {
     createdBy: group.created_by,
     createdAt: group.created_at.toISOString(),
     myRole: members.rows.find((m) => m.id === viewerId)?.role ?? 'lid',
+    // Alleen of jij de groep hebt gedempt; dat van anderen zie je niet
+    mutedUntil: mutedUntilJson(members.rows.find((m) => m.id === viewerId)?.muted_until),
     members: members.rows.map((m) => ({ id: m.id, displayName: m.display_name, role: m.role, joinedAt: m.joined_at.toISOString() })),
   }
 }
@@ -97,8 +100,9 @@ export function groupRoutes(r: Router, deps: Deps): void {
       unread: number
       last_message_at: Date | null
       created_at: Date
+      muted_until: Date | null
     }>(
-      `SELECT g.id, g.name, g.description, gm.role, g.created_at,
+      `SELECT g.id, g.name, g.description, gm.role, g.created_at, gm.muted_until,
               (SELECT count(*)::int FROM group_members x WHERE x.group_id = g.id) AS member_count,
               (SELECT count(*)::int FROM messages m
                 WHERE m.group_id = g.id AND m.created_at > gm.last_read_at AND m.sender_id <> $1 AND m.kind <> 'systeem') AS unread,
@@ -120,6 +124,7 @@ export function groupRoutes(r: Router, deps: Deps): void {
         unread: g.unread,
         lastMessageAt: g.last_message_at?.toISOString() ?? null,
         createdAt: g.created_at.toISOString(),
+        mutedUntil: mutedUntilJson(g.muted_until),
       })),
     }
   })
@@ -269,6 +274,27 @@ export function groupRoutes(r: Router, deps: Deps): void {
     return { status: 200, body: rows.map(toMessage) }
   })
 
+  // Het gesprek staat open en er kwam een nieuw bericht binnen via de WebSocket: dat is nu ook gelezen
+  r.post('/groups/:groupId/read', { operationId: 'markGroupRead' }, async (ctx) => {
+    const user = requireUser(ctx)
+    const groupId = uuidParam(ctx, 'groupId')
+    await requireMember(db, groupId, user.id)
+    await db.query('UPDATE group_members SET last_read_at = now() WHERE group_id = $1 AND user_id = $2', [groupId, user.id])
+    return { status: 204 }
+  })
+
+  // Groep dempen: 1 uur, 24 uur, altijd, of weer aan ('off'). Alleen voor jezelf.
+  r.put('/groups/:groupId/mute', { operationId: 'muteGroup' }, async (ctx) => {
+    const user = requireUser(ctx)
+    const groupId = uuidParam(ctx, 'groupId')
+    await requireMember(db, groupId, user.id)
+    const until = muteUntil((ctx.body as { duration: MuteDuration }).duration)
+    await db.query('UPDATE group_members SET muted_until = $3 WHERE group_id = $1 AND user_id = $2', [groupId, user.id, until])
+    const mutedUntil = mutedUntilJson(until)
+    deps.realtime.toUser(user.id, 'chat.muted', { groupId, mutedUntil })
+    return { status: 200, body: { mutedUntil } }
+  })
+
   r.post('/groups/:groupId/messages', { operationId: 'sendGroupMessage', rateLimit: { limit: 30, windowMs: 60_000 } }, async (ctx) => {
     const user = requireUser(ctx)
     const groupId = uuidParam(ctx, 'groupId')
@@ -280,12 +306,13 @@ export function groupRoutes(r: Router, deps: Deps): void {
     await sendToMembers(groupId, message)
     await db.query('UPDATE group_members SET last_read_at = now() WHERE group_id = $1 AND user_id = $2', [groupId, user.id])
 
-    // Pushmelding voor wie de app niet open heeft en de groep niet heeft gedempt. Geen inhoud in de melding.
+    // Pushmelding voor wie de app nu niet in beeld heeft en de groep niet heeft gedempt. Geen inhoud in de melding.
     const { rows } = await db.query<{ user_id: string }>(
-      'SELECT user_id FROM group_members WHERE group_id = $1 AND user_id <> $2 AND NOT muted',
+      `SELECT user_id FROM group_members
+        WHERE group_id = $1 AND user_id <> $2 AND (muted_until IS NULL OR muted_until <= now())`,
       [groupId, user.id],
     )
-    const offline = rows.map((r) => r.user_id).filter((id) => !deps.realtime.isOnline(id))
+    const offline = rows.map((r) => r.user_id).filter((id) => !deps.realtime.isVisible(id))
     if (offline.length > 0) {
       const info = await db.query<{ name: string; sender: string }>(
         'SELECT g.name, u.display_name AS sender FROM groups g, users u WHERE g.id = $1 AND u.id = $2',
@@ -294,10 +321,14 @@ export function groupRoutes(r: Router, deps: Deps): void {
       void deps.push.toUsers(
         offline,
         {
-          title: info.rows[0]?.name ?? 'Groep',
-          body: `${info.rows[0]?.sender ?? ''}: ${photoId ? 'stuurde een foto of video' : 'stuurde een bericht'}`,
+          title: info.rows[0]?.name ?? { nl: 'Groep', en: 'Group' },
+          body: {
+            nl: `${info.rows[0]?.sender ?? ''}: ${photoId ? 'stuurde een foto of video' : 'stuurde een bericht'}`,
+            en: `${info.rows[0]?.sender ?? ''}: ${photoId ? 'sent a photo or video' : 'sent a message'}`,
+          },
           tag: `group-${groupId}`,
           url: `/?group=${groupId}`,
+          withUnread: true,
         },
         'chat',
       )

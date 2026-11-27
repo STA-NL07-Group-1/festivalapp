@@ -456,6 +456,33 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /friends/{userId}/mute:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    put:
+      tags: [friends]
+      operationId: muteFriend
+      summary: Gesprek met een vriend dempen (of weer aanzetten)
+      description: >-
+        Gedempt = geen pushmeldingen van dit gesprek. Berichten komen gewoon binnen en tellen mee als ongelezen.
+        Alleen voor jezelf: de vriend merkt er niets van. Je andere apparaten krijgen het event `chat.muted`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MuteRequest' }
+      responses:
+        '200':
+          description: Opgeslagen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MuteResult' }
+              example:
+                mutedUntil: '2026-06-20T15:00:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /friends/locations:
     get:
       tags: [friends]
@@ -579,6 +606,35 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
 
   # ---------------------------------------------------------------- chat
+  /me/unread:
+    get:
+      tags: [chat]
+      operationId: getUnreadCount
+      summary: Aantal ongelezen chatberichten (vrienden en groepen samen)
+      description: Voor het getal op het app-icoon. Gedempte gesprekken tellen mee.
+      responses:
+        '200':
+          description: Aantal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnreadCount' }
+              example:
+                total: 3
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /messages/{userId}/read:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    post:
+      tags: [chat]
+      operationId: markMessagesRead
+      summary: Alle berichten van deze vriend als gelezen markeren
+      description: Voor als het gesprek open staat en er een nieuw bericht binnenkomt via de WebSocket.
+      responses:
+        '204': { description: Gelezen }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /messages/{userId}:
     parameters:
       - $ref: '#/components/parameters/UserId'
@@ -859,6 +915,42 @@ paths:
         '204': { description: Verwijderd }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /groups/{groupId}/read:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+    post:
+      tags: [groups]
+      operationId: markGroupRead
+      summary: De groep als gelezen markeren
+      description: Voor als de groep open staat en er een nieuw bericht binnenkomt via de WebSocket.
+      responses:
+        '204': { description: Gelezen }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /groups/{groupId}/mute:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+    put:
+      tags: [groups]
+      operationId: muteGroup
+      summary: Groep dempen (of weer aanzetten)
+      description: Alleen voor jezelf. Gedempt = geen pushmeldingen van deze groep; berichten tellen wel mee als ongelezen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MuteRequest' }
+      responses:
+        '200':
+          description: Opgeslagen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MuteResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /groups/{groupId}/messages:
@@ -1260,7 +1352,11 @@ paths:
       tags: [admin]
       operationId: createAnnouncement
       summary: Plaats een mededeling of noodbericht
-      description: Niveau `nood` wordt direct via WebSocket én push naar alle bezoekers gestuurd. Wordt gelogd in `audit_log`.
+      description: >-
+        Niveau `nood` wordt direct via WebSocket én push naar alle bezoekers gestuurd. Wordt gelogd in `audit_log`.
+        Stuur `title` en `body` in één taal: de server herkent de taal (anders: de taal van je account) en vertaalt
+        naar de andere. Lukt vertalen niet, dan staat de originele tekst in beide talen en is `translationFailed` true.
+        Met alle vier de velden `titleNl`, `titleEn`, `bodyNl` en `bodyEn` wordt er niets vertaald.
       x-roles: [beheerder, organisatie]
       requestBody:
         required: true
@@ -1275,6 +1371,7 @@ paths:
               schema: { $ref: '#/components/schemas/Announcement' }
               example:
                 id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5e
+                translationFailed: false
                 level: nood
                 titleNl: Onweer verwacht
                 titleEn: Thunderstorm expected
@@ -1829,6 +1926,9 @@ paths:
       tags: [admin]
       operationId: updateHouseRules
       summary: Huisregels van dit festival opslaan
+      description: >-
+        Met `houseRules` in één taal: de server vertaalt naar de andere taal (zoals bij mededelingen).
+        Met `houseRulesNl` en `houseRulesEn` worden ze zo opgeslagen, bijvoorbeeld om de vertaling te verbeteren.
       x-roles: [beheerder, organisatie]
       requestBody:
         required: true
@@ -1836,7 +1936,11 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/UpdateHouseRules' }
       responses:
-        '204': { description: Opgeslagen }
+        '200':
+          description: Opgeslagen, met de vertaling
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HouseRules' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -1846,6 +1950,7 @@ paths:
       tags: [admin]
       operationId: createFaqItem
       summary: Vraag toevoegen aan de veelgestelde vragen
+      description: Met `question` en `answer` in één taal wordt er vertaald; met de vier taalvelden niet.
       x-roles: [beheerder, organisatie]
       requestBody:
         required: true
@@ -1869,6 +1974,9 @@ paths:
       tags: [admin]
       operationId: updateFaqItem
       summary: Vraag wijzigen
+      description: >-
+        `question` of `answer` in één taal: dat veld wordt opnieuw vertaald. De losse taalvelden
+        (`questionNl` enz.) zijn om de vertaling te verbeteren.
       x-roles: [beheerder, organisatie]
       requestBody:
         required: true
@@ -2275,12 +2383,39 @@ components:
         code: { type: string, pattern: '^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$' }
     Friend:
       type: object
+      x-computed: [unread, mutedUntil]
       additionalProperties: false
-      required: [id, displayName, since]
+      required: [id, displayName, since, unread, mutedUntil]
       properties:
         id: { type: string, format: uuid }
         displayName: { type: string }
         since: { type: string, format: date-time }
+        unread: { type: integer, description: Berichten van deze vriend die je nog niet gelezen hebt }
+        mutedUntil:
+          type: [string, 'null']
+          format: date-time
+          description: Tot wanneer je dit gesprek hebt gedempt; null = niet gedempt. Jaar 9999 = altijd.
+    MuteRequest:
+      type: object
+      additionalProperties: false
+      required: [duration]
+      properties:
+        duration:
+          type: string
+          enum: ['1h', '24h', always, 'off']
+          description: 1 uur, 24 uur, altijd, of weer aanzetten
+    MuteResult:
+      type: object
+      additionalProperties: false
+      required: [mutedUntil]
+      properties:
+        mutedUntil: { type: [string, 'null'], format: date-time, description: null = niet gedempt. Jaar 9999 = altijd. }
+    UnreadCount:
+      type: object
+      additionalProperties: false
+      required: [total]
+      properties:
+        total: { type: integer, minimum: 0 }
     LocationUpdate:
       type: object
       additionalProperties: false
@@ -2390,9 +2525,9 @@ components:
     Group:
       type: object
       x-table: groups
-      x-computed: [myRole, memberCount, unread, lastMessageAt]
+      x-computed: [myRole, memberCount, unread, lastMessageAt, mutedUntil]
       additionalProperties: false
-      required: [id, name, description, myRole, memberCount, unread, lastMessageAt, createdAt]
+      required: [id, name, description, myRole, memberCount, unread, lastMessageAt, createdAt, mutedUntil]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -2402,6 +2537,7 @@ components:
         unread: { type: integer, description: Berichten sinds je de groep voor het laatst opende }
         lastMessageAt: { type: [string, 'null'], format: date-time }
         createdAt: { type: string, format: date-time }
+        mutedUntil: { type: [string, 'null'], format: date-time, description: Tot wanneer jij de groep hebt gedempt; null = niet gedempt }
     GroupRole: { type: string, enum: [beheerder, lid] }
     GroupMember:
       type: object
@@ -2415,7 +2551,7 @@ components:
     GroupDetail:
       type: object
       additionalProperties: false
-      required: [id, name, description, createdBy, createdAt, myRole, members]
+      required: [id, name, description, createdBy, createdAt, myRole, mutedUntil, members]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -2423,6 +2559,7 @@ components:
         createdBy: { type: [string, 'null'], format: uuid }
         createdAt: { type: string, format: date-time }
         myRole: { $ref: '#/components/schemas/GroupRole' }
+        mutedUntil: { type: [string, 'null'], format: date-time, description: Tot wanneer jij de groep hebt gedempt }
         members:
           type: array
           maxItems: 100
@@ -2600,6 +2737,7 @@ components:
     FaqItem:
       type: object
       x-table: faq_items
+      x-computed: [translationFailed]
       additionalProperties: false
       required: [id, questionNl, questionEn, answerNl, answerEn, sortOrder]
       properties:
@@ -2609,11 +2747,19 @@ components:
         answerNl: { type: string }
         answerEn: { type: string }
         sortOrder: { type: integer }
+        translationFailed:
+          type: boolean
+          description: Alleen na opslaan in het portal. true = niet vertaald (de tekst staat in beide talen hetzelfde).
     CreateFaqItem:
       type: object
       additionalProperties: false
-      required: [questionNl, questionEn, answerNl, answerEn]
+      description: Óf `question` + `answer` (wordt vertaald), óf alle vier de taalvelden
+      anyOf:
+        - required: [question, answer]
+        - required: [questionNl, questionEn, answerNl, answerEn]
       properties:
+        question: { type: string, minLength: 1, maxLength: 200 }
+        answer: { type: string, minLength: 1, maxLength: 2000 }
         questionNl: { type: string, minLength: 1, maxLength: 200 }
         questionEn: { type: string, minLength: 1, maxLength: 200 }
         answerNl: { type: string, minLength: 1, maxLength: 2000 }
@@ -2624,6 +2770,8 @@ components:
       additionalProperties: false
       minProperties: 1
       properties:
+        question: { type: string, minLength: 1, maxLength: 200 }
+        answer: { type: string, minLength: 1, maxLength: 2000 }
         questionNl: { type: string, minLength: 1, maxLength: 200 }
         questionEn: { type: string, minLength: 1, maxLength: 200 }
         answerNl: { type: string, minLength: 1, maxLength: 2000 }
@@ -2649,10 +2797,22 @@ components:
     UpdateHouseRules:
       type: object
       additionalProperties: false
-      required: [houseRulesNl, houseRulesEn]
+      description: Óf `houseRules` (wordt vertaald), óf `houseRulesNl` + `houseRulesEn`
+      anyOf:
+        - required: [houseRules]
+        - required: [houseRulesNl, houseRulesEn]
       properties:
-        houseRulesNl: { type: string, maxLength: 5000, description: Leeg = geen huisregels }
+        houseRules: { type: string, maxLength: 5000, description: In één taal. Leeg = geen huisregels }
+        houseRulesNl: { type: string, maxLength: 5000 }
         houseRulesEn: { type: string, maxLength: 5000 }
+    HouseRules:
+      type: object
+      additionalProperties: false
+      required: [houseRulesNl, houseRulesEn, translationFailed]
+      properties:
+        houseRulesNl: { type: [string, 'null'] }
+        houseRulesEn: { type: [string, 'null'] }
+        translationFailed: { type: boolean, description: true = niet vertaald }
     UploadSiteMap:
       type: object
       additionalProperties: false
@@ -2809,6 +2969,7 @@ components:
     Announcement:
       type: object
       x-table: announcements
+      x-computed: [translationFailed]
       additionalProperties: false
       required: [id, level, titleNl, titleEn, bodyNl, bodyEn, createdAt]
       properties:
@@ -2820,12 +2981,21 @@ components:
         bodyEn: { type: string }
         createdAt: { type: string, format: date-time }
         expiresAt: { type: [string, 'null'], format: date-time }
+        translationFailed:
+          type: boolean
+          description: Alleen in het antwoord op het plaatsen. true = niet vertaald (de tekst staat in beide talen hetzelfde).
     CreateAnnouncement:
       type: object
       additionalProperties: false
-      required: [level, titleNl, titleEn, bodyNl, bodyEn]
+      description: Óf `title` + `body` in één taal (wordt vertaald), óf alle vier de taalvelden
+      required: [level]
+      anyOf:
+        - required: [title, body]
+        - required: [titleNl, titleEn, bodyNl, bodyEn]
       properties:
         level: { $ref: '#/components/schemas/AnnouncementLevel' }
+        title: { type: string, minLength: 1, maxLength: 120 }
+        body: { type: string, minLength: 1, maxLength: 2000 }
         titleNl: { type: string, minLength: 1, maxLength: 120 }
         titleEn: { type: string, minLength: 1, maxLength: 120 }
         bodyNl: { type: string, minLength: 1, maxLength: 2000 }

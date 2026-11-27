@@ -71,6 +71,30 @@ textarea {
   color: var(--success);
   font-weight: 600;
 }
+.warning {
+  color: var(--warning);
+  font-weight: 600;
+}
+/* Tekst in beide talen naast elkaar (mededelingen, huisregels, vragen) */
+.both-languages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.both-languages p {
+  margin: 4px 0 0;
+  white-space: pre-line;
+}
+.lang {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
 .empty {
   padding: 40px;
   text-align: center;

@@ -11,11 +11,30 @@ const LEVELS: { value: Level; label: string; hint: string }[] = [
   { value: 'nood', label: 'Noodbericht', hint: 'Bovenaan in rood bij iedereen, pushmelding met hoge prioriteit.' },
 ]
 
+/** Eén mededeling in beide talen: bezoekers zien de taal waarin hun app staat */
+function BothLanguages({ a }: { a: Announcement }) {
+  return (
+    <div className="both-languages">
+      <div>
+        <span className="lang">NL</span>
+        <strong>{a.titleNl}</strong>
+        <p>{a.bodyNl}</p>
+      </div>
+      <div>
+        <span className="lang">EN</span>
+        <strong>{a.titleEn}</strong>
+        <p>{a.bodyEn}</p>
+      </div>
+    </div>
+  )
+}
+
 export function AnnouncementsPage() {
   const list = useAsync(() => api.get<Announcement[]>('/announcements'))
   const [level, setLevel] = useState<Level>('info')
   const [error, setError] = useState<string | null>(null)
-  const [sent, setSent] = useState(false)
+  // De laatst verstuurde mededeling, met de vertaling die de server maakte
+  const [sent, setSent] = useState<Announcement | null>(null)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -24,22 +43,17 @@ export function AnnouncementsPage() {
     const value = (name: string) => String(form.get(name) ?? '').trim()
     if (level === 'nood' && !window.confirm('Dit noodbericht gaat direct naar ALLE bezoekers. Doorgaan?')) return
     setError(null)
-    setSent(false)
+    setSent(null)
     try {
-      const body: Record<string, string> = {
-        level,
-        titleNl: value('titleNl'),
-        titleEn: value('titleEn'),
-        bodyNl: value('bodyNl'),
-        bodyEn: value('bodyEn'),
-      }
+      // Eén titel en tekst: de server herkent de taal en vertaalt naar de andere
+      const body: Record<string, string> = { level, title: value('title'), body: value('body') }
       const expires = value('expiresAt')
       if (expires) body.expiresAt = new Date(expires).toISOString()
       const created = await api.post<Announcement>('/admin/announcements', body)
       list.setData((items) => [created, ...(items ?? [])])
       formElement.reset()
       setLevel('info')
-      setSent(true)
+      setSent(created)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Versturen mislukt.')
     }
@@ -63,30 +77,33 @@ export function AnnouncementsPage() {
               </label>
             ))}
           </fieldset>
-          <div className="grid-2">
-            <label>
-              Titel (NL)
-              <input name="titleNl" required maxLength={120} />
-            </label>
-            <label>
-              Title (EN)
-              <input name="titleEn" required maxLength={120} />
-            </label>
-            <label>
-              Tekst (NL)
-              <textarea name="bodyNl" required maxLength={2000} rows={4} />
-            </label>
-            <label>
-              Text (EN)
-              <textarea name="bodyEn" required maxLength={2000} rows={4} />
-            </label>
-          </div>
+          <p className="muted small">
+            Schrijf in het Nederlands of het Engels. De taal wordt herkend en de mededeling wordt automatisch vertaald, zodat
+            iedere bezoeker hem in de taal van zijn app krijgt.
+          </p>
+          <label>
+            Titel
+            <input name="title" required maxLength={120} />
+          </label>
+          <label>
+            Tekst
+            <textarea name="body" required maxLength={2000} rows={4} />
+          </label>
           <label>
             Verloopt op (optioneel)
             <input name="expiresAt" type="datetime-local" />
           </label>
           {error && <p className="error">{error}</p>}
-          {sent && <p className="success">Verstuurd ✓</p>}
+          {sent && (
+            <div role="status">
+              <p className="success">Verstuurd ✓</p>
+              {sent.translationFailed ? (
+                <p className="warning">Vertalen lukte niet. De mededeling is in de originele taal verstuurd, ook naar Engelstalige bezoekers.</p>
+              ) : (
+                <BothLanguages a={sent} />
+              )}
+            </div>
+          )}
           <button className={`button ${level === 'nood' ? 'danger' : 'primary'}`}>
             {level === 'nood' ? '⚠️ Noodbericht versturen' : 'Versturen'}
           </button>
@@ -101,8 +118,7 @@ export function AnnouncementsPage() {
                   <span className={`badge ${a.level}`}>{LEVELS.find((l) => l.value === a.level)?.label}</span>
                   <time className="muted">{formatDateTime(a.createdAt)}</time>
                 </header>
-                <strong>{a.titleNl}</strong>
-                <p>{a.bodyNl}</p>
+                <BothLanguages a={a} />
               </li>
             ))}
           </ul>

@@ -21,6 +21,7 @@ import type { Locale } from '../lib/format'
 import { clearOffline, clearOfflineFestival, loadOffline, saveOffline } from '../lib/offlineStore'
 import { disablePush } from '../lib/push'
 import { connectRealtime, type RealtimeConnection } from '../lib/realtime'
+import { resetUnread } from '../lib/unread'
 
 type Status = 'loading' | 'anonymous' | 'authenticated'
 
@@ -143,6 +144,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const endSession = useCallback(() => {
     clearTokens()
     clearOffline()
+    // Geen getal meer op het app-icoon van een account dat niet meer is ingelogd
+    resetUnread()
     setFestival(null)
     rememberFestival(null)
     setMe(null)

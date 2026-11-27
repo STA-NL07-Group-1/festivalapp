@@ -3,6 +3,7 @@
 import type { Deps } from '../app.ts'
 import { audit } from '../db.ts'
 import { ORGANISERS, STAFF, badRequest, notFound, requireFestival, requireUser, uuidParam, type Router } from '../http.ts'
+import { authorLocale, bilingual } from '../translate.ts'
 import { FAQ_COLUMNS, LOST_ITEM_COLUMNS, toFaqItem, toLostItem } from './mappers.ts'
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024
@@ -15,7 +16,16 @@ export function imageType(data: Buffer): 'image/png' | 'image/jpeg' | 'image/web
   return null
 }
 
-type FaqInput = { questionNl: string; questionEn: string; answerNl: string; answerEn: string; sortOrder?: number }
+/** Eén vraag en antwoord (wordt vertaald), of alle vier de velden (eigen vertaling) */
+type FaqInput = {
+  question?: string
+  answer?: string
+  questionNl?: string
+  questionEn?: string
+  answerNl?: string
+  answerEn?: string
+  sortOrder?: number
+}
 
 export function contentRoutes(r: Router, deps: Deps): void {
   const { db } = deps
@@ -49,14 +59,25 @@ export function contentRoutes(r: Router, deps: Deps): void {
   r.put('/admin/house-rules', { operationId: 'updateHouseRules', roles: ORGANISERS }, async (ctx) => {
     const user = requireUser(ctx)
     const festivalId = requireFestival(ctx)
-    const b = ctx.body as { houseRulesNl: string; houseRulesEn: string }
+    const b = ctx.body as { houseRules?: string; houseRulesNl?: string; houseRulesEn?: string }
+    const text = await bilingual(
+      deps.translator,
+      { rules: b.houseRules },
+      { rules: [b.houseRulesNl, b.houseRulesEn] },
+      () => authorLocale(db, user.id),
+    )
+    if (!text) throw badRequest('Vul de huisregels in.')
     await db.query('UPDATE festivals SET house_rules_nl = $2, house_rules_en = $3 WHERE id = $1', [
       festivalId,
-      b.houseRulesNl.trim() || null,
-      b.houseRulesEn.trim() || null,
+      text.nl.rules || null,
+      text.en.rules || null,
     ])
     await audit(db, user.id, 'festival.house_rules', { type: 'festival', id: festivalId })
-    return { status: 204 }
+    // Terug met de vertaling, zodat het portal hem kan laten zien en de organisatie hem kan verbeteren
+    return {
+      status: 200,
+      body: { houseRulesNl: text.nl.rules || null, houseRulesEn: text.en.rules || null, translationFailed: text.failed },
+    }
   })
 
   // ------------------------------------------------------------- veelgestelde vragen
@@ -64,10 +85,17 @@ export function contentRoutes(r: Router, deps: Deps): void {
     const user = requireUser(ctx)
     const festivalId = requireFestival(ctx)
     const b = ctx.body as FaqInput
+    const text = await bilingual(
+      deps.translator,
+      { question: b.question, answer: b.answer },
+      { question: [b.questionNl, b.questionEn], answer: [b.answerNl, b.answerEn] },
+      () => authorLocale(db, user.id),
+    )
+    if (!text) throw badRequest('Vul een vraag en een antwoord in.')
     const { rows } = await db.query(
       `INSERT INTO faq_items (festival_id, question_nl, question_en, answer_nl, answer_en, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${FAQ_COLUMNS}`,
-      [festivalId, b.questionNl.trim(), b.questionEn.trim(), b.answerNl.trim(), b.answerEn.trim(), b.sortOrder ?? 0],
+      [festivalId, text.nl.question, text.en.question, text.nl.answer, text.en.answer, b.sortOrder ?? 0],
     ).catch((error: { code?: string }) => {
       // 23514 = CHECK: na het weghalen van spaties is een veld leeg
       if (error.code === '23514') throw badRequest('Vul de vraag en het antwoord in beide talen in.')
@@ -75,14 +103,26 @@ export function contentRoutes(r: Router, deps: Deps): void {
     })
     const item = toFaqItem(rows[0]!)
     await audit(db, user.id, 'faq.create', { type: 'faq_item', id: String(item.id) })
-    return { status: 201, body: item }
+    return { status: 201, body: { ...item, translationFailed: text.failed } }
   })
 
   r.patch('/admin/faq/:faqId', { operationId: 'updateFaqItem', roles: ORGANISERS }, async (ctx) => {
     const user = requireUser(ctx)
     const festivalId = requireFestival(ctx)
     const id = uuidParam(ctx, 'faqId')
-    const b = ctx.body as Partial<FaqInput>
+    const b = ctx.body as FaqInput
+    // Een nieuwe vraag of een nieuw antwoord in één taal: dat veld opnieuw vertalen.
+    // De losse taalvelden (questionNl enz.) zijn voor het verbeteren van de vertaling.
+    let failed = false
+    const fallback = () => authorLocale(db, user.id)
+    for (const field of ['question', 'answer'] as const) {
+      const value = b[field]
+      if (value === undefined) continue
+      const result = await deps.translator.translate([value.trim()], await fallback())
+      b[`${field}Nl`] = result.nl[0]!.trim()
+      b[`${field}En`] = result.en[0]!.trim()
+      failed ||= result.failed
+    }
     const { rows } = await db.query(
       `UPDATE faq_items SET
           question_nl = coalesce($3, question_nl),
@@ -98,7 +138,7 @@ export function contentRoutes(r: Router, deps: Deps): void {
     })
     if (!rows[0]) throw notFound()
     await audit(db, user.id, 'faq.update', { type: 'faq_item', id })
-    return { status: 200, body: toFaqItem(rows[0]) }
+    return { status: 200, body: { ...toFaqItem(rows[0]), translationFailed: failed } }
   })
 
   r.delete('/admin/faq/:faqId', { operationId: 'deleteFaqItem', roles: ORGANISERS }, async (ctx) => {

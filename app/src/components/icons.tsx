@@ -38,6 +38,13 @@ export const BellIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M10 20a2 2 0 0 0 4 0" />
   </svg>
 )
+/** Bel met een streep erdoor: dit gesprek is gedempt */
+export const BellOffIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M8.5 5.2A6 6 0 0 1 18 11v4M6 11v5l-1.5 2H17" />
+    <path d="M10 20a2 2 0 0 0 4 0M3 3l18 18" />
+  </svg>
+)
 export const MenuIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M4 7h16M4 12h16M4 17h16" />
