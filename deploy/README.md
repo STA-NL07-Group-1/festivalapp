@@ -1,11 +1,13 @@
 # Deployen op de server (Educloud)
 
-De festivalapp draait in vier containers: `db` (PostgreSQL), `backend` (API + WebSocket),
-`web` (Caddy met de app op `/` en het portal op `/beheer`) en `tunnel` (Cloudflare Tunnel).
+De festivalapp draait in vijf containers: `db` (PostgreSQL), `backend` (API + WebSocket),
+`translate` (LibreTranslate, vertaalt mededelingen en festivalinfo), `web` (Caddy met de app op `/` en
+het portal op `/beheer`) en `tunnel` (Cloudflare Tunnel).
 Er hoeft geen poort open op de server: al het verkeer komt binnen via de tunnel.
 
 ```
 bezoeker ──HTTPS──▶ Cloudflare ──tunnel──▶ web (Caddy) ──▶ /api/* ──▶ backend ──▶ db
+                                                   │                        └──▶ translate
                                                    ├──▶ /beheer/*  portal
                                                    └──▶ /*         app (PWA)
 ```
@@ -120,6 +122,23 @@ console in het Educloud-portaal en haal het bestand weg (`sudo rm` + `sudo netpl
 
 Schakel de controle van het certificaat nooit uit (`insecure-registries`): dan haal je mogelijk
 images van een onbekende server binnen.
+
+## Vertaler (LibreTranslate)
+
+De container `translate` vertaalt mededelingen, huisregels en veelgestelde vragen tussen Nederlands en
+Engels. Hij draait op de server zelf: de teksten gaan niet naar een externe dienst. Bij de eerste start
+downloadt hij de taalmodellen (een paar minuten, een paar honderd MB); die blijven bewaard in het volume
+`translate-models`. Hij gebruikt ongeveer 1 GB geheugen: kijk met `free -h` of de server dat over heeft.
+
+Valt de vertaler uit, dan werkt de rest gewoon: een mededeling gaat dan in de originele taal naar iedereen
+en het portal laat zien dat er niet vertaald is.
+
+```bash
+# Is hij klaar? Hoort ["en","nl"] (of andersom) te geven
+sudo docker compose -f compose.prod.yaml exec backend node -e "fetch('http://translate:5000/languages').then(r=>r.json()).then(l=>console.log(l.map(x=>x.code)))"
+# Logs (o.a. het downloaden van de modellen)
+sudo docker compose -f compose.prod.yaml logs --tail 50 translate
+```
 
 ## Controleren of de site werkt (healthcheck)
 

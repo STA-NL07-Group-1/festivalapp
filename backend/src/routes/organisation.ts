@@ -3,14 +3,30 @@ import type { Deps } from '../app.ts'
 import { audit } from '../db.ts'
 import { ORGANISERS, STAFF, badRequest, notFound, requireFestival, requireUser, uuidParam, type Router } from '../http.ts'
 import { festivalUserIds, staffUserIds } from '../festival.ts'
+import type { PushText } from '../push.ts'
 import { sha256 } from '../security.ts'
+import { authorLocale, bilingual, type Locale } from '../translate.ts'
 import { TICKET_SECONDS } from '../wsTickets.ts'
 import { PERFORMANCE_COLUMNS, toAnnouncement, toPerformance, toSos } from './mappers.ts'
 
 /** Pushmelding voor de bezoeker als het personeel een SOS-melding oppakt of afsluit */
-const SOS_UPDATES: Record<string, { title: string; body: string }> = {
-  in_behandeling: { title: 'Hulp is onderweg', body: 'Je SOS-melding is opgepakt. Blijf waar je bent als dat veilig is.' },
-  afgehandeld: { title: 'SOS-melding afgehandeld', body: 'Je melding is afgesloten. Heb je toch nog hulp nodig? Druk opnieuw op SOS.' },
+const SOS_UPDATES: Record<string, { title: PushText; body: PushText }> = {
+  in_behandeling: {
+    title: { nl: 'Hulp is onderweg', en: 'Help is on the way' },
+    body: { nl: 'Je SOS-melding is opgepakt. Blijf waar je bent als dat veilig is.', en: 'Your SOS alert has been picked up. Stay where you are if it is safe.' },
+  },
+  afgehandeld: {
+    title: { nl: 'SOS-melding afgehandeld', en: 'SOS alert closed' },
+    body: { nl: 'Je melding is afgesloten. Heb je toch nog hulp nodig? Druk opnieuw op SOS.', en: 'Your alert has been closed. Still need help? Press SOS again.' },
+  },
+}
+
+/** Wat er bij een gewijzigd optreden in de melding staat, per status */
+const STATUS_TEXT: Record<string, Record<Locale, string>> = {
+  vertraagd: { nl: 'is vertraagd', en: 'is delayed' },
+  verplaatst: { nl: 'is verplaatst', en: 'has moved' },
+  geannuleerd: { nl: 'is geannuleerd', en: 'is cancelled' },
+  gepland: { nl: 'heeft een nieuwe tijd', en: 'has a new time' },
 }
 
 export function organisationRoutes(r: Router, deps: Deps): void {
@@ -66,12 +82,30 @@ export function organisationRoutes(r: Router, deps: Deps): void {
   r.post('/admin/announcements', { operationId: 'createAnnouncement', roles: ORGANISERS }, async (ctx) => {
     const user = requireUser(ctx)
     const festivalId = requireFestival(ctx)
-    const b = ctx.body as { level: string; titleNl: string; titleEn: string; bodyNl: string; bodyEn: string; expiresAt?: string }
+    const b = ctx.body as {
+      level: string
+      title?: string
+      body?: string
+      titleNl?: string
+      titleEn?: string
+      bodyNl?: string
+      bodyEn?: string
+      expiresAt?: string
+    }
     if (b.expiresAt && new Date(b.expiresAt) <= new Date()) throw badRequest('De verloopdatum ligt in het verleden.')
+    // Eén titel en tekst in één taal: de server herkent de taal en vertaalt naar de andere.
+    // Alle vier de velden ingevuld: die worden zo opgeslagen (eigen vertaling).
+    const text = await bilingual(
+      deps.translator,
+      { title: b.title, body: b.body },
+      { title: [b.titleNl, b.titleEn], body: [b.bodyNl, b.bodyEn] },
+      () => authorLocale(db, user.id),
+    )
+    if (!text || !text.nl.title || !text.nl.body) throw badRequest('Vul een titel en een tekst in.')
     const { rows } = await db.query(
       `INSERT INTO announcements (festival_id, author_id, level, title_nl, title_en, body_nl, body_en, expires_at)
        VALUES ($8, $1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [user.id, b.level, b.titleNl.trim(), b.titleEn.trim(), b.bodyNl.trim(), b.bodyEn.trim(), b.expiresAt ?? null, festivalId],
+      [user.id, b.level, text.nl.title, text.en.title, text.nl.body, text.en.body, b.expiresAt ?? null, festivalId],
     )
     const announcement = toAnnouncement(rows[0]!)
     await audit(db, user.id, 'announcement.create', { type: 'announcement', id: String(announcement.id) }, { level: b.level })
@@ -82,8 +116,8 @@ export function organisationRoutes(r: Router, deps: Deps): void {
       void deps.push.toUsers(
         await festivalUserIds(db, festivalId),
         {
-          title: b.level === 'nood' ? `⚠️ ${b.titleNl}` : b.titleNl,
-          body: b.bodyNl,
+          title: b.level === 'nood' ? { nl: `⚠️ ${text.nl.title}`, en: `⚠️ ${text.en.title}` } : { nl: text.nl.title, en: text.en.title },
+          body: { nl: text.nl.body, en: text.en.body },
           tag: `announcement-${announcement.id}`,
           url: '/?tab=meldingen',
           urgent: b.level === 'nood',
@@ -91,7 +125,7 @@ export function organisationRoutes(r: Router, deps: Deps): void {
         'announcement',
       )
     }
-    return { status: 201, body: announcement }
+    return { status: 201, body: { ...announcement, translationFailed: text.failed } }
   })
 
   // ------------------------------------------------------------- SOS
@@ -110,8 +144,11 @@ export function organisationRoutes(r: Router, deps: Deps): void {
     // Ook een pushmelding, want het portal staat niet altijd open. Urgent: gaat altijd door, ook als iemand
     // meldingen heeft uitgezet. Geen bericht of locatie in de melding: die kan op een vergrendelscherm staan.
     void deps.push.toUsers(await staffUserIds(db, festivalId), {
-      title: '🚨 SOS-melding',
-      body: alert.latitude != null ? 'Iemand heeft hulp nodig. Open het portal voor de locatie.' : 'Iemand heeft hulp nodig (zonder locatie). Open het portal.',
+      title: { nl: '🚨 SOS-melding', en: '🚨 SOS alert' },
+      body:
+        alert.latitude != null
+          ? { nl: 'Iemand heeft hulp nodig. Open het portal voor de locatie.', en: 'Someone needs help. Open the portal for the location.' }
+          : { nl: 'Iemand heeft hulp nodig (zonder locatie). Open het portal.', en: 'Someone needs help (no location). Open the portal.' },
       tag: `sos-${alert.id}`,
       url: '/beheer/',
       urgent: true,
@@ -211,17 +248,14 @@ export function organisationRoutes(r: Router, deps: Deps): void {
 
     // Iedereen die dit optreden in zijn timetable heeft, krijgt een melding
     const fans = await db.query<{ user_id: string }>('SELECT user_id FROM timetable_entries WHERE performance_id = $1', [id])
-    const statusText: Record<string, string> = {
-      vertraagd: 'is vertraagd',
-      verplaatst: 'is verplaatst',
-      geannuleerd: 'is geannuleerd',
-      gepland: 'heeft een nieuwe tijd',
-    }
     void deps.push.toUsers(
       fans.rows.map((f) => f.user_id),
       {
         title: String(performance.artist),
-        body: `${String(performance.artist)} ${statusText[String(performance.status)] ?? 'is gewijzigd'}`,
+        body: {
+          nl: `${String(performance.artist)} ${STATUS_TEXT[String(performance.status)]?.nl ?? 'is gewijzigd'}`,
+          en: `${String(performance.artist)} ${STATUS_TEXT[String(performance.status)]?.en ?? 'has changed'}`,
+        },
         tag: `performance-${id}`,
         url: '/?tab=timetable',
       },

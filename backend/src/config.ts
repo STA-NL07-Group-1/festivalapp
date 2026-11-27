@@ -16,6 +16,8 @@ export interface Config {
   /** Mail via Resend; null = mails alleen in de log */
   mail: { apiKey: string; from: string } | null
   festivalTimeZone: string
+  /** LibreTranslate voor het automatisch vertalen van mededelingen en info; null = niet vertalen */
+  translate: { url: string; apiKey: string | null } | null
 }
 
 function required(name: string, fallback?: string): string {
@@ -65,6 +67,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       ? { apiKey: process.env.RESEND_API_KEY, from: process.env.MAIL_FROM ?? 'Festival Buddy <no-reply@festivalbuddy.nl>' }
       : null,
     festivalTimeZone: process.env.FESTIVAL_TIME_ZONE ?? 'Europe/Amsterdam',
+    translate: process.env.TRANSLATE_URL ? { url: process.env.TRANSLATE_URL, apiKey: process.env.TRANSLATE_API_KEY || null } : null,
     ...overrides,
   }
 }

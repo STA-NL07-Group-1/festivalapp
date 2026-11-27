@@ -1,8 +1,8 @@
 // WebSocket-hub. De client vraagt eerst een eenmalig ticket aan (POST /realtime/ticket, zie wsTickets.ts)
 // en verbindt daarna met /ws?ticket=<ticket>&festival=<festival-id>. Het access-token komt zo niet in de URL.
 // Zonder festival kiest de server het meest logische festival, net als bij de API.
-// Clients sturen alleen "ping"; alle wijzigingen lopen via REST, zodat
-// autorisatie op één plek zit. De server stuurt events als { type, data }.
+// Clients sturen alleen "ping" en "visibility" (of de app op dit moment in beeld is); alle wijzigingen
+// lopen via REST, zodat autorisatie op één plek zit. De server stuurt events als { type, data }.
 import type { IncomingMessage, Server } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { UUID_RE, type Role } from './http.ts'
@@ -16,6 +16,11 @@ export interface Realtime {
   /** Iedereen die bij één festival kijkt */
   toFestival(festivalId: string, type: string, data: unknown): void
   isOnline(userId: string): boolean
+  /**
+   * De app staat bij deze gebruiker nu echt in beeld (op minstens één apparaat). Alleen dan slaan we een
+   * pushmelding over: de app laat het bericht zelf zien. Een verbinding van een app op de achtergrond telt niet.
+   */
+  isVisible(userId: string): boolean
   close(): void
 }
 
@@ -30,6 +35,8 @@ interface Client {
   festivalId: string | null
   role: Role
   alive: boolean
+  /** Laatst gemelde zichtbaarheid. Begint op true: de app verbindt als hij geopend wordt en meldt het meteen als hij naar de achtergrond gaat. */
+  visible: boolean
 }
 
 /** Een hub zonder verbindingen (voor tests en scripts) */
@@ -39,6 +46,7 @@ export const noRealtime: Realtime = {
   toStaff() {},
   toFestival() {},
   isOnline: () => false,
+  isVisible: () => false,
   close() {},
 }
 
@@ -84,7 +92,7 @@ export function attachRealtime(
   })
 
   function register(socket: WebSocket, user: { id: string; exp: number }, access: { festivalId: string | null; role: Role }) {
-    const client: Client = { socket, userId: user.id, festivalId: access.festivalId, role: access.role, alive: true }
+    const client: Client = { socket, userId: user.id, festivalId: access.festivalId, role: access.role, alive: true, visible: true }
     if (!clients.has(user.id)) clients.set(user.id, new Set())
     clients.get(user.id)!.add(client)
 
@@ -96,13 +104,14 @@ export function attachRealtime(
       client.alive = true
     })
     socket.on('message', (raw) => {
-      let message: { type?: unknown } | null
+      let message: { type?: unknown; data?: { visible?: unknown } } | null
       try {
-        message = JSON.parse(raw.toString()) as { type?: unknown }
+        message = JSON.parse(raw.toString()) as typeof message
       } catch {
         return
       }
       if (message?.type === 'ping') socket.send(JSON.stringify({ type: 'pong', data: {} }))
+      if (message?.type === 'visibility' && typeof message.data?.visible === 'boolean') client.visible = message.data.visible
     })
     socket.on('close', () => {
       clearTimeout(expiry)
@@ -150,6 +159,7 @@ export function attachRealtime(
       for (const set of clients.values()) for (const client of set) if (client.festivalId === festivalId) send(client, payload)
     },
     isOnline: (userId) => (clients.get(userId)?.size ?? 0) > 0,
+    isVisible: (userId) => [...(clients.get(userId) ?? [])].some((c) => c.visible && c.socket.readyState === c.socket.OPEN),
     close() {
       clearInterval(heartbeat)
       for (const set of clients.values()) for (const client of set) client.socket.close(1001)

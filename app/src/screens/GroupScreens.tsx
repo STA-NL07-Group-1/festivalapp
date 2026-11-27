@@ -1,6 +1,7 @@
 // Groepsapps: een groep maken, en de groepsinfo met leden, gedeelde media en verlaten.
 import { useState, type FormEvent } from 'react'
 import { api, ApiError, type Friend, type GroupDetail } from '../api/client'
+import { MuteOptions } from '../components/MuteSheet'
 import { SharedMedia } from '../components/SharedMedia'
 import { Avatar, ErrorNote, Sheet } from '../components/ui'
 import { useI18n } from '../i18n'
@@ -94,12 +95,14 @@ export function GroupInfoSheet({
   onClose,
   group,
   onChanged,
+  onMuteChanged,
   onLeft,
 }: {
   open: boolean
   onClose: () => void
   group: GroupDetail | null
   onChanged: () => void
+  onMuteChanged: (mutedUntil: string | null) => void
   onLeft: () => void
 }) {
   const { t } = useI18n()
@@ -213,6 +216,8 @@ export function GroupInfoSheet({
             ))}
           </ul>
         </section>
+
+        <MuteOptions target={{ groupId: group.id }} name={group.name} mutedUntil={group.mutedUntil} onChanged={onMuteChanged} />
 
         {open && <SharedMedia target={{ groupId: group.id }} names={nameOf} />}
 

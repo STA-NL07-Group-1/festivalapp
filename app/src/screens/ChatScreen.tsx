@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, type GroupDetail, type Message } from '../api/client'
-import { BackIcon, GroupIcon, SendIcon } from '../components/icons'
+import { BackIcon, BellOffIcon, GroupIcon, SendIcon } from '../components/icons'
 import { MediaComposer, MediaThumb, MediaViewer, type MediaItem } from '../components/media'
 import { Avatar, Empty, ErrorNote, Skeleton } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatTime } from '../lib/format'
 import type { Conversation } from '../lib/conversation'
 import { forgetMedia, isVideo } from '../lib/media'
+import { isMuted, muteLabel } from '../lib/mute'
+import { refreshUnread } from '../lib/unread'
 import { systemText } from '../lib/systemText'
 import { deliver, enqueue, enqueueGroup, flushOutbox, isMessageItem, removeFromOutbox, useOutbox, type MessageItem } from '../lib/outbox'
 import { useAsync } from '../lib/useAsync'
@@ -31,6 +33,18 @@ export function ChatScreen({ conversation, onBack }: { conversation: Conversatio
   const [infoOpen, setInfoOpen] = useState(false)
   const [viewing, setViewing] = useState<MediaItem | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
+  // Gedempt? Eerst uit de lijst waar je vandaan kwam; daarna bijgewerkt door de groepsinfo, het profiel
+  // of je andere apparaten (realtime-event chat.muted)
+  const [mutedUntil, setMutedUntil] = useState<string | null>(isGroup ? conversation.group.mutedUntil : conversation.friend.mutedUntil)
+  const [groupMuteSeen, setGroupMuteSeen] = useState<string | null | undefined>(undefined)
+  if (group.data && group.data.mutedUntil !== groupMuteSeen) {
+    setGroupMuteSeen(group.data.mutedUntil)
+    setMutedUntil(group.data.mutedUntil)
+  }
+  useRealtime<{ friendId?: string; groupId?: string; mutedUntil: string | null }>(
+    'chat.muted',
+    useCallback((e) => (isGroup ? e.groupId === id : e.friendId === id) && setMutedUntil(e.mutedUntil), [isGroup, id]),
+  )
 
   const title = isGroup ? (group.data?.name ?? conversation.group.name) : conversation.friend.displayName
   const nameOf = (userId: string) =>
@@ -52,14 +66,19 @@ export function ChatScreen({ conversation, onBack }: { conversation: Conversatio
         : (m.senderId === id && m.recipientId === me?.id) || (m.senderId === me?.id && m.recipientId === id),
     [isGroup, id, me?.id],
   )
+  const readPath = isGroup ? `/groups/${id}/read` : `/messages/${id}/read`
   const onMessage = useCallback(
     (m: Message) => {
       if (!belongsHere(m)) return
       addMessage(m)
       // Eigen bericht via de WebSocket eerder binnen dan het antwoord op de POST: uit de wachtrij halen
       if (m.senderId === me?.id && m.clientId) removeFromOutbox(m.clientId)
+      // Je ziet het bericht nu: gelezen (alleen als de app echt in beeld is)
+      else if (m.senderId !== me?.id && document.visibilityState === 'visible') {
+        void api.post(readPath).then(refreshUnread, () => {})
+      }
     },
-    [belongsHere, addMessage, me?.id],
+    [belongsHere, addMessage, me?.id, readPath],
   )
   useRealtime<Message>(isGroup ? 'group.message' : 'chat.message', onMessage)
 
@@ -79,6 +98,11 @@ export function ChatScreen({ conversation, onBack }: { conversation: Conversatio
   useEffect(() => {
     if (online) void flushOutbox().then(() => reload())
   }, [online, reload])
+
+  // Het gesprek ophalen markeert alles als gelezen (zie de API): het getal op het app-icoon bijwerken
+  useEffect(() => {
+    if (messages.data) refreshUnread()
+  }, [messages.data])
 
   // De API geeft nieuwste eerst; we tonen oudste bovenaan
   const ordered = useMemo(() => [...(messages.data ?? [])].reverse(), [messages.data])
@@ -154,7 +178,15 @@ export function ChatScreen({ conversation, onBack }: { conversation: Conversatio
             <Avatar name={title} size={36} />
           )}
           <span className="chat-title-text">
-            <h1>{title}</h1>
+            <h1>
+              {title}
+              {isMuted(mutedUntil) && (
+                <>
+                  <BellOffIcon className="muted-icon" />
+                  <span className="visually-hidden">{muteLabel(mutedUntil, t, locale)}</span>
+                </>
+              )}
+            </h1>
             {isGroup && group.data && <small className="muted">{t('group.members', { count: group.data.members.length })}</small>}
           </span>
         </button>
@@ -219,9 +251,21 @@ export function ChatScreen({ conversation, onBack }: { conversation: Conversatio
 
       <MediaViewer item={viewing} onClose={() => setViewing(null)} onDelete={deleteMedia} />
       {isGroup ? (
-        <GroupInfoSheet open={infoOpen} onClose={() => setInfoOpen(false)} group={group.data ?? null} onChanged={() => void reloadGroup()} onLeft={onBack} />
+        <GroupInfoSheet
+          open={infoOpen}
+          onClose={() => setInfoOpen(false)}
+          group={group.data ? { ...group.data, mutedUntil } : null}
+          onChanged={() => void reloadGroup()}
+          onMuteChanged={setMutedUntil}
+          onLeft={onBack}
+        />
       ) : (
-        <FriendInfoSheet open={infoOpen} onClose={() => setInfoOpen(false)} friend={conversation.friend} />
+        <FriendInfoSheet
+          open={infoOpen}
+          onClose={() => setInfoOpen(false)}
+          friend={{ ...conversation.friend, mutedUntil }}
+          onMuteChanged={setMutedUntil}
+        />
       )}
     </section>
   )

@@ -1320,6 +1320,30 @@ export interface components {
             displayName: string;
             /** Format: date-time */
             since: string;
+            /** @description Berichten van deze vriend die je nog niet gelezen hebt */
+            unread: number;
+            /**
+             * Format: date-time
+             * @description Tot wanneer je dit gesprek hebt gedempt; null = niet gedempt. Jaar 9999 = altijd.
+             */
+            mutedUntil: string | null;
+        };
+        MuteRequest: {
+            /**
+             * @description 1 uur, 24 uur, altijd, of weer aanzetten
+             * @enum {string}
+             */
+            duration: "1h" | "24h" | "always" | "off";
+        };
+        MuteResult: {
+            /**
+             * Format: date-time
+             * @description null = niet gedempt. Jaar 9999 = altijd.
+             */
+            mutedUntil: string | null;
+        };
+        UnreadCount: {
+            total: number;
         };
         LocationUpdate: {
             latitude: number;
@@ -1456,6 +1480,11 @@ export interface components {
             lastMessageAt: string | null;
             /** Format: date-time */
             createdAt: string;
+            /**
+             * Format: date-time
+             * @description Tot wanneer jij de groep hebt gedempt; null = niet gedempt
+             */
+            mutedUntil: string | null;
         };
         GroupMember: {
             /** Format: uuid */
@@ -1475,6 +1504,11 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             myRole: components["schemas"]["GroupRole"];
+            /**
+             * Format: date-time
+             * @description Tot wanneer jij de groep hebt gedempt
+             */
+            mutedUntil: string | null;
             members: components["schemas"]["GroupMember"][];
         };
         CreateGroup: {
@@ -1592,15 +1626,22 @@ export interface components {
             answerNl: string;
             answerEn: string;
             sortOrder: number;
+            /** @description Alleen na opslaan in het portal. true = niet vertaald (de tekst staat in beide talen hetzelfde). */
+            translationFailed?: boolean;
         };
+        /** @description Óf `question` + `answer` (wordt vertaald), óf alle vier de taalvelden */
         CreateFaqItem: {
-            questionNl: string;
-            questionEn: string;
-            answerNl: string;
-            answerEn: string;
+            question?: string;
+            answer?: string;
+            questionNl?: string;
+            questionEn?: string;
+            answerNl?: string;
+            answerEn?: string;
             sortOrder?: number;
         };
         UpdateFaqItem: {
+            question?: string;
+            answer?: string;
             questionNl?: string;
             questionEn?: string;
             answerNl?: string;
@@ -1617,10 +1658,18 @@ export interface components {
             siteMapUpdatedAt: string | null;
             faq: components["schemas"]["FaqItem"][];
         };
+        /** @description Óf `houseRules` (wordt vertaald), óf `houseRulesNl` + `houseRulesEn` */
         UpdateHouseRules: {
-            /** @description Leeg = geen huisregels */
-            houseRulesNl: string;
-            houseRulesEn: string;
+            /** @description In één taal. Leeg = geen huisregels */
+            houseRules?: string;
+            houseRulesNl?: string;
+            houseRulesEn?: string;
+        };
+        HouseRules: {
+            houseRulesNl: string | null;
+            houseRulesEn: string | null;
+            /** @description true = niet vertaald */
+            translationFailed: boolean;
         };
         UploadSiteMap: {
             /** @description png, jpeg of webp als base64, maximaal 3 MB */
@@ -1755,13 +1804,18 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             expiresAt?: string | null;
+            /** @description Alleen in het antwoord op het plaatsen. true = niet vertaald (de tekst staat in beide talen hetzelfde). */
+            translationFailed?: boolean;
         };
+        /** @description Óf `title` + `body` in één taal (wordt vertaald), óf alle vier de taalvelden */
         CreateAnnouncement: {
             level: components["schemas"]["AnnouncementLevel"];
-            titleNl: string;
-            titleEn: string;
-            bodyNl: string;
-            bodyEn: string;
+            title?: string;
+            body?: string;
+            titleNl?: string;
+            titleEn?: string;
+            bodyNl?: string;
+            bodyEn?: string;
             /** Format: date-time */
             expiresAt?: string;
         };

@@ -4,6 +4,8 @@ import { areFriends, audit, friendIds, transaction } from '../db.ts'
 import { badRequest, forbidden, notFound, requireFestival, requireUser, uuidParam, type Router } from '../http.ts'
 import { newFriendCode, normalizeCode, sha256 } from '../security.ts'
 import { MESSAGE_SELECT, saveMessage } from '../messages.ts'
+import { muteUntil, mutedUntilJson, type MuteDuration } from '../mutes.ts'
+import { unreadCounts } from '../push.ts'
 import { toFriend, toFriendLocation, toMe, toMessage, toPin } from './mappers.ts'
 
 const FRIEND_CODE_MINUTES = 10
@@ -126,9 +128,11 @@ export function socialRoutes(r: Router, deps: Deps): void {
   r.get('/friends', { operationId: 'listFriends' }, async (ctx) => {
     const user = requireUser(ctx)
     const { rows } = await db.query(
-      `SELECT u.id, u.display_name, f.created_at AS since
+      `SELECT u.id, u.display_name, f.created_at AS since, cm.muted_until,
+              (SELECT count(*)::int FROM messages m WHERE m.sender_id = u.id AND m.recipient_id = $1 AND m.read_at IS NULL) AS unread
          FROM friendships f
          JOIN users u ON u.id = CASE WHEN f.user_a = $1 THEN f.user_b ELSE f.user_a END
+         LEFT JOIN chat_mutes cm ON cm.user_id = $1 AND cm.friend_id = u.id
         WHERE f.user_a = $1 OR f.user_b = $1
         ORDER BY lower(u.display_name)
         LIMIT 500`,
@@ -165,11 +169,17 @@ export function socialRoutes(r: Router, deps: Deps): void {
 
     const me = await db.query('SELECT id, display_name FROM users WHERE id = $1', [user.id])
     deps.realtime.toUser(friend.id as string, 'friend.added', toFriend({ ...me.rows[0], since: friend.since }))
-    // Wie de code liet zien en de app niet meer open heeft, hoort het via een pushmelding
-    if (!deps.realtime.isOnline(friend.id as string)) {
+    // Wie de code liet zien en de app niet meer in beeld heeft, hoort het via een pushmelding
+    if (!deps.realtime.isVisible(friend.id as string)) {
+      const name = String(me.rows[0]?.display_name)
       void deps.push.toUsers(
         [friend.id as string],
-        { title: 'Nieuwe vriend', body: `${String(me.rows[0]?.display_name)} is nu je vriend`, tag: `friend-${user.id}`, url: '/?tab=vrienden' },
+        {
+          title: { nl: 'Nieuwe vriend', en: 'New friend' },
+          body: { nl: `${name} is nu je vriend`, en: `${name} is now your friend` },
+          tag: `friend-${user.id}`,
+          url: '/?tab=vrienden',
+        },
         'chat',
       )
     }
@@ -182,8 +192,30 @@ export function socialRoutes(r: Router, deps: Deps): void {
     const [a, b] = user.id < other ? [user.id, other] : [other, user.id]
     const { rowCount } = await db.query('DELETE FROM friendships WHERE user_a = $1 AND user_b = $2', [a, b])
     if (!rowCount) throw notFound()
+    await db.query('DELETE FROM chat_mutes WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)', [user.id, other])
     deps.realtime.toUser(other, 'friend.removed', { userId: user.id })
     return { status: 204 }
+  })
+
+  // Gesprek met een vriend dempen: 1 uur, 24 uur, altijd, of weer aan ('off')
+  r.put('/friends/:userId/mute', { operationId: 'muteFriend' }, async (ctx) => {
+    const user = requireUser(ctx)
+    const other = uuidParam(ctx, 'userId')
+    if (!(await areFriends(db, user.id, other))) throw notFound()
+    const until = muteUntil((ctx.body as { duration: MuteDuration }).duration)
+    if (until) {
+      await db.query(
+        `INSERT INTO chat_mutes (user_id, friend_id, muted_until) VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, friend_id) DO UPDATE SET muted_until = EXCLUDED.muted_until`,
+        [user.id, other, until],
+      )
+    } else {
+      await db.query('DELETE FROM chat_mutes WHERE user_id = $1 AND friend_id = $2', [user.id, other])
+    }
+    const mutedUntil = mutedUntilJson(until)
+    // Ook je andere apparaten laten weten dat het gesprek (niet meer) gedempt is
+    deps.realtime.toUser(user.id, 'chat.muted', { friendId: other, mutedUntil })
+    return { status: 200, body: { mutedUntil } }
   })
 
   r.get('/friends/locations', { operationId: 'listFriendLocations' }, async (ctx) => {
@@ -280,6 +312,21 @@ export function socialRoutes(r: Router, deps: Deps): void {
     return { status: 200, body: rows.map(toMessage) }
   })
 
+  // Het gesprek staat open en er kwam een nieuw bericht binnen via de WebSocket: dat is nu ook gelezen
+  r.post('/messages/:userId/read', { operationId: 'markMessagesRead' }, async (ctx) => {
+    const user = requireUser(ctx)
+    const other = uuidParam(ctx, 'userId')
+    if (!(await areFriends(db, user.id, other))) throw notFound()
+    await db.query('UPDATE messages SET read_at = now() WHERE recipient_id = $1 AND sender_id = $2 AND read_at IS NULL', [user.id, other])
+    return { status: 204 }
+  })
+
+  // Hoeveel chatberichten je nog niet gelezen hebt, voor het getal op het app-icoon
+  r.get('/me/unread', { operationId: 'getUnreadCount' }, async (ctx) => {
+    const user = requireUser(ctx)
+    return { status: 200, body: { total: (await unreadCounts(db, [user.id])).get(user.id) ?? 0 } }
+  })
+
   r.post('/messages/:userId', { operationId: 'sendMessage', rateLimit: { limit: 30, windowMs: 60_000 } }, async (ctx) => {
     const user = requireUser(ctx)
     const other = uuidParam(ctx, 'userId')
@@ -290,19 +337,31 @@ export function socialRoutes(r: Router, deps: Deps): void {
     // zonder het nog een keer naar de vriend te sturen of een pushmelding te geven
     if (!created) return { status: 200, body: message }
     deps.realtime.toUsers([other, user.id], 'chat.message', message)
-    if (!deps.realtime.isOnline(other)) {
-      const sender = await db.query<{ display_name: string }>('SELECT display_name FROM users WHERE id = $1', [user.id])
-      void deps.push.toUsers(
-        [other],
-        {
-          title: sender.rows[0]?.display_name ?? 'Nieuw bericht',
-          // Geen berichtinhoud in de melding: die kan op het vergrendelscherm staan
-          body: photoId ? 'Stuurde je een foto of video' : 'Stuurde je een bericht',
-          tag: `chat-${user.id}`,
-          url: `/?chat=${user.id}`,
-        },
-        'chat',
+    // Pushmelding, behalve als de app van de vriend nu in beeld is (die laat het bericht zelf zien)
+    // of als de vriend dit gesprek heeft gedempt
+    if (!deps.realtime.isVisible(other)) {
+      const { rows } = await db.query<{ display_name: string; muted: boolean }>(
+        `SELECT u.display_name,
+                EXISTS (SELECT 1 FROM chat_mutes cm WHERE cm.user_id = $2 AND cm.friend_id = u.id AND cm.muted_until > now()) AS muted
+           FROM users u WHERE u.id = $1`,
+        [user.id, other],
       )
+      if (!rows[0]?.muted) {
+        void deps.push.toUsers(
+          [other],
+          {
+            title: rows[0]?.display_name ?? { nl: 'Nieuw bericht', en: 'New message' },
+            // Geen berichtinhoud in de melding: die kan op het vergrendelscherm staan
+            body: photoId
+              ? { nl: 'Stuurde je een foto of video', en: 'Sent you a photo or video' }
+              : { nl: 'Stuurde je een bericht', en: 'Sent you a message' },
+            tag: `chat-${user.id}`,
+            url: `/?chat=${user.id}`,
+            withUnread: true,
+          },
+          'chat',
+        )
+      }
     }
     return { status: 201, body: message }
   })

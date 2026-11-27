@@ -53,6 +53,15 @@ interface PushPayload {
   tag?: string
   url?: string
   urgent?: boolean
+  /** Bij chatberichten: aantal ongelezen berichten, voor het getal op het app-icoon */
+  unread?: number
+}
+
+/** Getal op het app-icoon (iPhone vanaf iOS 16.4 als app op het beginscherm, Android Chrome, desktop) */
+async function setBadge(count: number): Promise<void> {
+  const nav = self.navigator
+  if (!('setAppBadge' in nav)) return
+  await (count > 0 ? nav.setAppBadge(count) : nav.clearAppBadge()).catch(() => {})
 }
 
 self.addEventListener('push', (event) => {
@@ -62,15 +71,20 @@ self.addEventListener('push', (event) => {
   } catch {
     data.body = event.data?.text() ?? ''
   }
+  // De server stuurt alleen een melding als de app niet in beeld is; dan altijd laten zien
+  // (een iPhone stopt de pushmeldingen als een melding niet zichtbaar wordt)
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      tag: data.tag,
-      icon: '/pwa-192x192.png',
-      badge: '/pwa-64x64.png',
-      requireInteraction: data.urgent ?? false,
-      data: { url: data.url ?? '/' },
-    }),
+    Promise.all([
+      self.registration.showNotification(data.title, {
+        body: data.body,
+        tag: data.tag,
+        icon: '/pwa-192x192.png',
+        badge: '/pwa-64x64.png',
+        requireInteraction: data.urgent ?? false,
+        data: { url: data.url ?? '/' },
+      }),
+      typeof data.unread === 'number' ? setBadge(data.unread) : Promise.resolve(),
+    ]),
   )
 })
 
@@ -80,11 +94,20 @@ self.addEventListener('notificationclick', (event) => {
   // Alleen paden binnen onze eigen app openen
   const target = new URL(raw, self.location.origin)
   const url = target.origin === self.location.origin ? target.href : self.location.origin
+  const portal = new URL(url).pathname.startsWith('/beheer')
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      const existing = windows.find((w) => new URL(w.url).origin === self.location.origin)
-      if (existing) {
+      // Een venster van hetzelfde deel (app of beheerportal)
+      const existing = windows.find((w) => {
+        const path = new URL(w.url)
+        return path.origin === self.location.origin && path.pathname.startsWith('/beheer') === portal
+      })
+      if (existing && !portal) {
+        // De app staat al open: hij opent zelf het juiste gesprek (zie App.tsx), zonder opnieuw te laden
+        existing.postMessage({ type: 'open', url })
+        await existing.focus()
+      } else if (existing) {
         await existing.navigate(url)
         await existing.focus()
       } else {

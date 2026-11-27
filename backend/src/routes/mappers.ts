@@ -1,5 +1,6 @@
 // Databaserijen → API-objecten (camelCase, zoals in api.yaml).
 // Alleen velden die in api.yaml staan gaan naar buiten: nooit hashes of tellers.
+import { mutedUntilJson } from '../mutes.ts'
 
 type Row = Record<string, unknown>
 const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? null : String(v))
@@ -54,7 +55,14 @@ export const toTeamMember = (r: Row) => ({
 
 export const toOwner = (r: Row) => ({ userId: r.id, email: r.email, displayName: r.display_name, platformRole: r.platform_role })
 
-export const toFriend = (r: Row) => ({ id: r.id, displayName: r.display_name, since: iso(r.since) })
+export const toFriend = (r: Row) => ({
+  id: r.id,
+  displayName: r.display_name,
+  since: iso(r.since),
+  // Alleen bij GET /friends uit de database; bij een nieuwe vriend is er nog niets
+  unread: (r.unread as number | undefined) ?? 0,
+  mutedUntil: mutedUntilJson(r.muted_until as Date | null | undefined),
+})
 
 export const toFriendLocation = (r: Row) => ({
   userId: r.user_id,

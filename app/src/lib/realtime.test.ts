@@ -88,6 +88,27 @@ describe('connectRealtime', () => {
     connection.close()
   })
 
+  it('meldt de server of de app in beeld is, zodat die weet of er een pushmelding moet komen', async () => {
+    const connection = connectRealtime()
+    await flush()
+    const socket = FakeSocket.all[0]!
+    socket.open()
+    const visibility = () => socket.sent.map((m) => JSON.parse(m)).filter((m) => m.type === 'visibility').map((m) => m.data.visible)
+    expect(visibility()).toEqual([true])
+
+    // De app gaat naar de achtergrond en komt terug
+    let state: DocumentVisibilityState = 'hidden'
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(visibility()).toEqual([true, false])
+    state = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(visibility()).toEqual([true, false, true])
+    // Weer de echte waarde van jsdom (van Document.prototype)
+    delete (document as { visibilityState?: unknown }).visibilityState
+    connection.close()
+  })
+
   it('probeert opnieuw als verbinden blijft hangen', async () => {
     const connection = connectRealtime()
     await flush()

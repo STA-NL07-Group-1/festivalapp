@@ -372,11 +372,21 @@ Table group_members {
   added_by uuid [ref: > users.id]
   joined_at timestamptz [not null, default: `now()`]
   last_read_at timestamptz [not null, default: `now()`, note: 'Alles daarna telt als ongelezen']
-  muted boolean [not null, default: false, note: 'Geen pushmeldingen van deze groep']
+  muted_until timestamptz [note: 'Geen pushmeldingen van deze groep tot dit tijdstip; 9999-12-31 = altijd (migratie 0012)']
   indexes {
     (group_id, user_id) [pk]
     user_id [name: 'group_members_user_idx']
   }
+}
+
+Table chat_mutes {
+  user_id uuid [not null, ref: > users.id]
+  friend_id uuid [not null, ref: > users.id, note: 'Het gesprek met deze vriend is gedempt (alleen voor user_id)']
+  muted_until timestamptz [not null, note: '9999-12-31 = altijd']
+  indexes {
+    (user_id, friend_id) [pk]
+  }
+  Note: 'Gesprek met een vriend dempen (migratie 0012)'
 }
 
 Table stages {

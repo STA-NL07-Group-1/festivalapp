@@ -55,7 +55,10 @@ export async function sendShowReminders(db: Db, push: Push, now = new Date()): P
       userIds,
       {
         title: row.artist,
-        body: `Begint over ${minutes} ${minutes === 1 ? 'minuut' : 'minuten'} bij ${row.stage}${row.signed_up ? '. Je bent aangemeld.' : ''}`,
+        body: {
+          nl: `Begint over ${minutes} ${minutes === 1 ? 'minuut' : 'minuten'} bij ${row.stage}${row.signed_up ? '. Je bent aangemeld.' : ''}`,
+          en: `Starts in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} at ${row.stage}${row.signed_up ? ". You're signed up." : ''}`,
+        },
         tag: `reminder-${row.performance_id}`,
         url: '/?tab=timetable',
       },

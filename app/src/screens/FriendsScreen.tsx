@@ -1,12 +1,15 @@
 import QRCode from 'qrcode'
-import { useCallback, useState, type FormEvent } from 'react'
+import { useCallback, useState, type FormEvent, type ReactNode } from 'react'
 import { api, ApiError, type Friend, type FriendCode, type FriendLocation, type Group } from '../api/client'
-import { ChevronIcon, GroupIcon, PlusIcon, UsersIcon } from '../components/icons'
+import { BellOffIcon, ChevronIcon, GroupIcon, PlusIcon, UsersIcon } from '../components/icons'
+import { MuteOptions, MuteSheet } from '../components/MuteSheet'
 import { SharedMedia } from '../components/SharedMedia'
 import { QrScanner } from '../components/QrScanner'
 import { Avatar, Empty, Screen, Sheet, Skeleton, Toast } from '../components/ui'
 import { useI18n } from '../i18n'
 import { formatRelative, formatTime } from '../lib/format'
+import { useLongPress } from '../lib/longPress'
+import { isMuted, type MuteTarget } from '../lib/mute'
 import { useAsync, useOfflineAsync } from '../lib/useAsync'
 import { useRealtime, useSession } from '../state/session'
 import { NewGroupSheet } from './GroupScreens'
@@ -23,6 +26,37 @@ export function extractFriendCode(text: string): string | null {
   }
   const clean = candidate.replace(/[\s-]/g, '').toUpperCase()
   return /^[A-Z0-9]{8}$/.test(clean) ? `${clean.slice(0, 4)}-${clean.slice(4)}` : null
+}
+
+/** Rij in de lijst: tik = openen, ingedrukt houden = dempen (zie lib/longPress.ts) */
+function ConversationRow({
+  className = '',
+  onOpen,
+  onLongPress,
+  children,
+}: {
+  className?: string
+  onOpen: () => void
+  onLongPress: () => void
+  children: ReactNode
+}) {
+  const press = useLongPress(onLongPress)
+  return (
+    <button type="button" className={`row long-press ${className}`} onClick={onOpen} {...press}>
+      {children}
+    </button>
+  )
+}
+
+function UnreadBadge({ count }: { count: number | undefined }) {
+  const { t } = useI18n()
+  // Bewaarde lijst van een oudere versie heeft nog geen aantal
+  if (!count || count <= 0) return null
+  return (
+    <span className="tab-badge inline" aria-label={t('friends.unread', { count })}>
+      {count > 99 ? '99+' : count}
+    </span>
+  )
 }
 
 export function FriendsScreen({
@@ -52,6 +86,8 @@ export function FriendsScreen({
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [selected, setSelected] = useState<Friend | null>(null)
+  // Ingedrukt gehouden gesprek: menu om te dempen
+  const [muting, setMuting] = useState<{ target: MuteTarget; name: string; mutedUntil: string | null } | null>(null)
 
   const reloadFriends = friends.reload
   useRealtime('friend.added', useCallback(() => void reloadFriends(), [reloadFriends]))
@@ -62,6 +98,25 @@ export function FriendsScreen({
   useRealtime('group.updated', refreshGroups)
   useRealtime('group.removed', refreshGroups)
   useRealtime('group.message', refreshGroups)
+  // Nieuw bericht van een vriend (ongelezen) of gedempt op een ander apparaat
+  const refreshFriends = useCallback(() => void reloadFriends(), [reloadFriends])
+  useRealtime('chat.message', refreshFriends)
+  useRealtime(
+    'chat.muted',
+    useCallback(() => {
+      void reloadFriends()
+      void reloadGroups()
+    }, [reloadFriends, reloadGroups]),
+  )
+
+  /** Na dempen: de lijsten meteen bijwerken (zonder te wachten op de server) */
+  function applyMute(target: MuteTarget, mutedUntil: string | null) {
+    if ('groupId' in target) groups.setData((list) => list?.map((g) => (g.id === target.groupId ? { ...g, mutedUntil } : g)))
+    else {
+      friends.setData((list) => list?.map((f) => (f.id === target.friendId ? { ...f, mutedUntil } : f)))
+      setSelected((f) => (f && f.id === target.friendId ? { ...f, mutedUntil } : f))
+    }
+  }
 
   // Een nieuwe code zodra het venster opengaat (of bij "Nieuwe code")
   const myCode = useAsync(async () => {
@@ -113,21 +168,23 @@ export function FriendsScreen({
           <ul className="list stagger">
             {groups.data.map((g) => (
               <li key={g.id}>
-                <button type="button" className="row" onClick={() => onOpenGroup(g)}>
+                <ConversationRow
+                  onOpen={() => onOpenGroup(g)}
+                  onLongPress={() => setMuting({ target: { groupId: g.id }, name: g.name, mutedUntil: g.mutedUntil })}
+                >
                   <span className="avatar group-avatar" aria-hidden="true">
                     <GroupIcon />
                   </span>
                   <span className="grow">
-                    <strong>{g.name}</strong>
+                    <strong>
+                      {g.name}
+                      {isMuted(g.mutedUntil) && <BellOffIcon className="muted-icon" />}
+                    </strong>
                     <span className="muted small">{t('group.members', { count: g.memberCount })}</span>
                   </span>
-                  {g.unread > 0 && (
-                    <span className="tab-badge inline" aria-label={t('group.unread', { count: g.unread })}>
-                      {g.unread}
-                    </span>
-                  )}
+                  <UnreadBadge count={g.unread} />
                   <ChevronIcon />
-                </button>
+                </ConversationRow>
               </li>
             ))}
           </ul>
@@ -152,20 +209,30 @@ export function FriendsScreen({
           const loc = locationOf(f.id)
           return (
             <li key={f.id}>
-              <button type="button" className={`row ${loc ? 'located' : ''}`} onClick={() => setSelected(f)}>
+              <ConversationRow
+                className={loc ? 'located' : ''}
+                onOpen={() => setSelected(f)}
+                onLongPress={() => setMuting({ target: { friendId: f.id }, name: f.displayName, mutedUntil: f.mutedUntil })}
+              >
                 <Avatar name={f.displayName} />
                 <span className="grow">
-                  <strong>{f.displayName}</strong>
+                  <strong>
+                    {f.displayName}
+                    {isMuted(f.mutedUntil) && <BellOffIcon className="muted-icon" />}
+                  </strong>
                   <span className="muted small">
                     {loc ? t('friends.online', { time: formatRelative(loc.recordedAt, locale) }) : ' '}
                   </span>
                 </span>
+                <UnreadBadge count={f.unread} />
                 <ChevronIcon />
-              </button>
+              </ConversationRow>
             </li>
           )
         })}
       </ul>
+
+      {(friends.data?.length ?? 0) > 0 && <p className="muted small list-hint">{t('mute.longPressHint')}</p>}
 
       <Sheet open={selected !== null} onClose={() => setSelected(null)} title={selected?.displayName ?? ''}>
         {selected && (
@@ -177,6 +244,12 @@ export function FriendsScreen({
             <button type="button" className="button" onClick={() => onOpenTimetable(selected.id)}>
               {t('friends.timetable')}
             </button>
+            <MuteOptions
+              target={{ friendId: selected.id }}
+              name={selected.displayName}
+              mutedUntil={selected.mutedUntil}
+              onChanged={(until) => applyMute({ friendId: selected.id }, until)}
+            />
             <SharedMedia target={{ friendId: selected.id }} names={(id) => (id === me?.id ? t('chat.you') : selected.displayName)} />
             <button type="button" className="button danger-outline" onClick={() => void remove(selected)}>
               {t('friends.remove')}
@@ -184,6 +257,19 @@ export function FriendsScreen({
           </div>
         )}
       </Sheet>
+
+      <MuteSheet
+        open={muting !== null}
+        onClose={() => setMuting(null)}
+        target={muting?.target ?? null}
+        name={muting?.name ?? ''}
+        mutedUntil={muting?.mutedUntil}
+        onChanged={(until) => {
+          if (!muting) return
+          applyMute(muting.target, until)
+          setToast(t(until ? 'mute.done' : 'mute.undone', { name: muting.name }))
+        }}
+      />
 
       <Sheet open={menu} onClose={() => setMenu(false)} title={t('friends.newMenu')}>
         <div className="stack">
@@ -217,7 +303,7 @@ export function FriendsScreen({
         onCreated={(group) => {
           setNewGroup(false)
           void groups.reload()
-          onOpenGroup({ id: group.id, name: group.name, description: group.description, myRole: group.myRole, memberCount: group.members.length, unread: 0, lastMessageAt: null, createdAt: group.createdAt })
+          onOpenGroup({ id: group.id, name: group.name, description: group.description, myRole: group.myRole, memberCount: group.members.length, unread: 0, lastMessageAt: null, createdAt: group.createdAt, mutedUntil: null })
         }}
       />
 

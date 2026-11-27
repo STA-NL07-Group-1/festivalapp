@@ -2,6 +2,8 @@
 // Een verbinding kan ook "half open" blijven hangen, bijvoorbeeld bij wisselen van wifi naar 4G:
 // de telefoon denkt dat hij verbonden is, maar er komt niets meer binnen. Daarom houden we bij
 // wanneer er voor het laatst iets binnenkwam en verbinden we zelf opnieuw als dat te lang geleden is.
+// We laten de server ook weten of de app in beeld is: alleen dan slaat hij de pushmelding over
+// (de app laat het bericht dan zelf zien). Op de achtergrond kan de verbinding nog even openstaan.
 import { API_URL, api, currentFestival } from '../api/client'
 
 type Listener = (data: unknown) => void
@@ -33,6 +35,10 @@ export function connectRealtime(): RealtimeConnection {
   let opening = false
 
   const setStatus = (online: boolean) => statusListeners.forEach((l) => l(online))
+  const sendVisibility = () => {
+    if (socket?.readyState !== WebSocket.OPEN) return
+    socket.send(JSON.stringify({ type: 'visibility', data: { visible: document.visibilityState === 'visible' } }))
+  }
   const isDead = () => Date.now() - lastMessageAt > DEAD_AFTER_MS
 
   /** Huidige verbinding loslaten en opnieuw proberen. De handlers gaan eraf, zodat een late onclose niets meer doet. */
@@ -80,6 +86,7 @@ export function connectRealtime(): RealtimeConnection {
       attempt = 0
       lastMessageAt = Date.now()
       setStatus(true)
+      sendVisibility()
       ping = setInterval(() => {
         if (isDead()) {
           drop()
@@ -115,6 +122,8 @@ export function connectRealtime(): RealtimeConnection {
 
   // Telefoon komt terug uit de slaapstand: meteen opnieuw proberen als de verbinding weg of dood is
   const onVisible = () => {
+    // Naar de achtergrond of weer terug: altijd even aan de server laten weten
+    sendVisibility()
     if (document.visibilityState !== 'visible') return
     const healthy = socket?.readyState === WebSocket.OPEN && !isDead()
     if (healthy || opening) return
@@ -124,6 +133,8 @@ export function connectRealtime(): RealtimeConnection {
     void open()
   }
   document.addEventListener('visibilitychange', onVisible)
+  // iPhone: bij het wegvegen van de app komt niet altijd een visibilitychange
+  window.addEventListener('pagehide', sendVisibility)
 
   void open()
 
@@ -141,6 +152,7 @@ export function connectRealtime(): RealtimeConnection {
       closed = true
       clearTimeout(retry)
       document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('pagehide', sendVisibility)
       drop()
     },
   }
